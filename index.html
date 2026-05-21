@@ -313,30 +313,37 @@ var FIGURES  = {"architecture": "<svg width=\"100%\" viewBox=\"0 0 680 510\" xml
 var curSec = null, curSub = 0, currentLang = 'en';
 
 
-// ── GEMINI CHATBOT ────────────────────────────────────────────
-var GEMINI_KEY = 'AIzaSyDytZo2SfL1nNy0d_5V1XmpLI8ZTm8d-mc';
-var GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY;
+
+
+// ── GROQ CHATBOT ─────────────────────────────────────────────
+var GROQ_KEY = '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';
+var GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 var chatHistory = [];
 
 var MAS_DOC = `## Overview & Technical Architecture
 IBM Maximo Application Suite (MAS) 9.1 is an integrated, cloud-native enterprise asset management platform built on Red Hat OpenShift Container Platform. It consolidates EAM, IoT monitoring, AI-based predictive maintenance, and computer vision under a single AppPoints license model.
-Key facts: Latest release: MAS 9.1.9 — February 2026 | Requires Red Hat OpenShift Container Platform 4.12+ | Minimum 3 master nodes (16 vCPU / 32 GB RAM each) | All components deployed as Kubernetes Operators | Single AppPoints pool covers all MAS applications | Supports AWS, Azure, IBM Cloud, on-premise, SaaS, SNO
+- Latest release: MAS 9.1.9 — February 2026
+- Requires Red Hat OpenShift Container Platform 4.12+
+- Minimum 3 master nodes (16 vCPU / 32 GB RAM each)
+- All components deployed as Kubernetes Operators
+- Single AppPoints pool covers all MAS applications
+- Supports AWS, Azure, IBM Cloud, on-premise, SaaS, SNO
 ### What is Maximo Application Suite?
-MAS is IBM's unified platform for enterprise asset management, condition monitoring, and AI-driven maintenance intelligence. It replaces the legacy Maximo Asset Management 7.x product and consolidates previously separate IBM products — Maximo, Monitor, Predict, Visual Inspection, Assist, TRIRIGA, an
+MAS is IBM's unified platform for enterprise asset management, condition monitoring, and AI-driven maintenance intelligence. It replaces the legacy Maximo Asset Management 7.x product and consolidates previously separate IBM products — Maximo, Monitor, Predict, Visual Inspection, Assist, TRIRIGA, and Watson IoT — into a single Kubernetes-native deployment. Every application is managed by an OpenSh
 - Replaces: Maximo Asset Management 7.x, IBM TRIRIGA, Watson IoT Platform, Maximo Visual Inspection (standalone)
 - Deployment model: Kubernetes Operators on Red Hat OpenShift Container Platform (OCP)
 - License model: AppPoints — one pool consumed across all apps, all users
 - Available as self-managed (on-premise or cloud IaaS) or fully IBM-managed SaaS
 - Continuous Delivery (CD) release channel: monthly updates via operator subscription
 ### OpenShift Control Plane
-The OCP control plane manages the entire Kubernetes cluster lifecycle. A minimum of 3 master nodes is required for high availability via etcd quorum. The control plane runs the Kubernetes API server, scheduler, controller manager, and etcd. MAS components are deployed as operators in their own names
+The OCP control plane manages the entire Kubernetes cluster lifecycle. A minimum of 3 master nodes is required for high availability via etcd quorum. The control plane runs the Kubernetes API server, scheduler, controller manager, and etcd. MAS components are deployed as operators in their own namespaces, each managed by the OCP Operator Lifecycle Manager (OLM).
 - Minimum 3 master nodes — must be odd number for etcd quorum
 - Recommended master node sizing: 8 vCPU, 32 GB RAM, 120 GB SSD per node
 - etcd: distributed key-value store — stores all cluster state and Kubernetes CRs
 - OCP version: 4.12 minimum — 4.14 recommended for MAS 9.1
 - Operator Lifecycle Manager (OLM): manages operator installs and upgrades
 ### OpenShift Data Plane — Worker Nodes
-Worker nodes host all MAS application pods. Node sizing depends heavily on which MAS applications are deployed. IBM recommends dedicated node groups (using node labels and taints) for databases, AI workloads, and MAS application pods to prevent resource contention. Storage must provide both ReadWrit
+Worker nodes host all MAS application pods. Node sizing depends heavily on which MAS applications are deployed. IBM recommends dedicated node groups (using node labels and taints) for databases, AI workloads, and MAS application pods to prevent resource contention. Storage must provide both ReadWriteOnce (RWO) and ReadWriteMany (RWX) storage classes before installation.
 - Minimum worker nodes: 3 for core only — up to 10+ for full suite with CP4D
 - Recommended worker node: 16 vCPU, 64 GB RAM, 200 GB SSD (production)
 - Storage classes required: RWO (block) and RWX (shared filesystem)
@@ -366,7 +373,12 @@ MAS requires specific network configuration for both internal cluster communicat
 
 ## Getting Started
 Your starting point in MAS depends on your role. Application users access their app URL directly. Application admins configure apps in Suite Administration. Suite admins manage the full platform including deployment, identity, and certificates. SaaS admins use a separate IBM-managed portal.
-Key facts: App user URL: {app}.{workspace}.{cluster-apps-domain} | Suite Admin URL: admin.{workspace}.{cluster-apps-domain} | AppPoints consumed on login — configure timeout to reclaim idle points | SaaS: IBM manages infrastructure — you manage apps, users, and AppPoints | First login: change password immediately if using local accounts | Mobile: Maximo Mobile app (iOS/Android) for field technician access to Manage
+- App user URL: {app}.{workspace}.{cluster-apps-domain}
+- Suite Admin URL: admin.{workspace}.{cluster-apps-domain}
+- AppPoints consumed on login — configure timeout to reclaim idle points
+- SaaS: IBM manages infrastructure — you manage apps, users, and AppPoints
+- First login: change password immediately if using local accounts
+- Mobile: Maximo Mobile app (iOS/Android) for field technician access to Manage
 ### Application User
 End users access MAS applications directly via their application URL. Authentication is via SSO (SAML), LDAP credentials, or a local account depending on what your administrator configured. AppPoints are consumed automatically on login and released on logout or session timeout.
 - Access URL: {app}.{workspace}.{apps-domain} — ask your admin for the exact URL
@@ -398,16 +410,21 @@ For MAS as a Service deployments, IBM manages all infrastructure including the O
 
 ## What's New in MAS 9.1
 MAS 9.1 delivers IBM watsonx integration, three new applications (Maximo IT, Maximo AI Service, expanded Collaborate), SMTP OAuth2, IBM Power/Z architecture support, MongoDB 8.0, CloudPak for Data 5.2 with Python 3.12, and major administration UX improvements.
-Key facts: 3 new apps: Maximo IT, Maximo AI Service, enhanced Collaborate | Watson Studio rebranded → IBM watsonx.ai | MongoDB 8.0 supported from 9.1.6 (Nov 2025) | CP4D 5.2 + Python 3.12 from 9.1.7 (Dec 2025) | SMTP OAuth2 for Microsoft 365 / Google Workspace (Feb 2026) | IBM Power (ppc64le) and IBM Z (s390x) support since 9.0.12
+- 3 new apps: Maximo IT, Maximo AI Service, enhanced Collaborate
+- Watson Studio rebranded → IBM watsonx.ai
+- MongoDB 8.0 supported from 9.1.6 (Nov 2025)
+- CP4D 5.2 + Python 3.12 from 9.1.7 (Dec 2025)
+- SMTP OAuth2 for Microsoft 365 / Google Workspace (Feb 2026)
+- IBM Power (ppc64le) and IBM Z (s390x) support since 9.0.12
 ### IBM watsonx Integration
-MAS 9.1 replaces Watson Studio branding with IBM watsonx.ai. Maximo AI Service is a new add-on that connects Maximo Manage directly to the watsonx AI framework, enabling generative AI features — natural language work order generation, failure root cause analysis, and asset data querying using LLMs. 
+MAS 9.1 replaces Watson Studio branding with IBM watsonx.ai. Maximo AI Service is a new add-on that connects Maximo Manage directly to the watsonx AI framework, enabling generative AI features — natural language work order generation, failure root cause analysis, and asset data querying using LLMs. Watson Discovery is no longer a dependency of Maximo Assist in 9.0+ (removed — contact IBM Support b
 - Watson Studio → now branded IBM watsonx.ai inside CloudPak for Data 5.x
 - Maximo AI Service: new operator connecting Manage to watsonx.ai LLM endpoints
 - Watsonx.ai features in Manage: AI work order generation, NL asset queries, failure analysis
 - Watson Discovery removed from Maximo Assist dependencies in 9.0 — must be manually removed before upgrade
 - IBM watsonx.data: optional data lakehouse integration for large-scale asset data analytics
 ### New Application — Maximo IT
-Maximo IT provides a unified IT and OT (operational technology) service management platform. It handles IT helpdesk incidents, service requests, and change management alongside OT asset maintenance — giving organizations a single pane of glass for both domains. Available in SaaS Standard and Premium
+Maximo IT provides a unified IT and OT (operational technology) service management platform. It handles IT helpdesk incidents, service requests, and change management alongside OT asset maintenance — giving organizations a single pane of glass for both domains. Available in SaaS Standard and Premium editions from December 2024.
 - ITSM capabilities: incident, problem, change, and service request management
 - OT integration: links IT incidents to physical asset work orders in Maximo Manage
 - CMDB: configuration management database for IT and OT assets in one system
@@ -435,7 +452,7 @@ MAS Core and Maximo Manage 9.0.12+ can now run natively on IBM Power (ppc64le) a
 - Db2 constraint: external Db2 instance supported — Db2 operator may have limitations
 - Grafana operators: NOT supported on ppc64le or s390x — use alternative monitoring
 ### Administration UX Improvements
-The Suite Administration interface was redesigned in MAS 9.1 with a new side navigation model that separates catalog browsing from day-to-day application management. User management received significant updates including a new immutable User ID field, locale/timezone at creation time, and improved m
+The Suite Administration interface was redesigned in MAS 9.1 with a new side navigation model that separates catalog browsing from day-to-day application management. User management received significant updates including a new immutable User ID field, locale/timezone at creation time, and improved multi-user search.
 - New side navigation: Applications, Workspace, Catalog, Users, Licenses separated
 - Applications page: manage deployed apps (activate, version, disable, delete) post-deploy
 - Workspace page: update config, download debug info, manage external launchers
@@ -444,37 +461,42 @@ The Suite Administration interface was redesigned in MAS 9.1 with a new side nav
 
 ## Applications, Add-ons & Licensing
 MAS 9.1 includes 11 core applications, 3 industry business solutions, and 5 add-on tools — all licensed via AppPoints. Each application is an independent Kubernetes Operator consuming from a single shared license pool.
-Key facts: 11 core applications in MAS 9.1 | AppPoints: consumption-based — Limited, Base, Premium tiers per user | Each app is a separate Kubernetes Operator in its own namespace | Business solutions: Health+Predict Utilities, MRO Optimization, Civil Infrastructure | Add-ons: MVI Edge, Parts Identifier, App Connect, Optimizer, Accelerators | AppPoints usage reported in real-time via Data Reporter Operator (DRO)
+- 11 core applications in MAS 9.1
+- AppPoints: consumption-based — Limited, Base, Premium tiers per user
+- Each app is a separate Kubernetes Operator in its own namespace
+- Business solutions: Health+Predict Utilities, MRO Optimization, Civil Infrastructure
+- Add-ons: MVI Edge, Parts Identifier, App Connect, Optimizer, Accelerators
+- AppPoints usage reported in real-time via Data Reporter Operator (DRO)
 ### Maximo Manage — EAM Core
-Maximo Manage is the enterprise asset management backbone of MAS, replacing legacy Maximo Asset Management 7.x. It manages the full asset lifecycle — from procurement and installation through maintenance, inspection, and decommission. It uses IBM Db2 or Oracle Database as its backend and supports mu
+Maximo Manage is the enterprise asset management backbone of MAS, replacing legacy Maximo Asset Management 7.x. It manages the full asset lifecycle — from procurement and installation through maintenance, inspection, and decommission. It uses IBM Db2 or Oracle Database as its backend and supports multi-tenancy via workspaces.
 - Asset management: hierarchical asset register, asset specifications, failure codes, meters
 - Work management: work orders, job plans, safety plans, labour reporting, PM scheduling
 - Inventory: storerooms, items, inventory transactions, reorder points, vendor catalogues
 - Purchasing: requisitions, purchase orders, receipts, invoices, contracts
 - Database: IBM Db2 (default) or Oracle Database — schema created automatically on first deploy
 ### Maximo Monitor — IoT Monitoring
-Maximo Monitor provides real-time condition monitoring for connected assets using IoT sensor data. It ingests data via Kafka (MQTT or HTTP), stores time-series data in Db2 Warehouse, and displays configurable dashboards with anomaly detection alerts. It integrates with Maximo Manage to automatically
+Maximo Monitor provides real-time condition monitoring for connected assets using IoT sensor data. It ingests data via Kafka (MQTT or HTTP), stores time-series data in Db2 Warehouse, and displays configurable dashboards with anomaly detection alerts. It integrates with Maximo Manage to automatically create work orders when asset conditions exceed thresholds.
 - Data ingestion: MQTT (port 1883/8883) and HTTP/HTTPS device APIs via Kafka
 - Storage: Db2 Warehouse for time-series sensor data — columnar format for fast aggregation
 - Dashboard cards: metric, image, bar chart, value card, alert card, table card types
 - Anomaly detection: built-in ML models (KMeans, Regression) auto-trained on historical data
 - Alert rules: threshold-based, statistical (standard deviation), ML anomaly score-based
 ### Maximo Predict — AI Failure Prediction
-Maximo Predict uses IBM CloudPak for Data (Watson Studio + Watson Machine Learning) to build and deploy asset failure prediction models. It surfaces failure probability scores, anomaly scores, and asset end-of-life estimates directly in Maximo Health dashboards. Models are trained on historical sens
+Maximo Predict uses IBM CloudPak for Data (Watson Studio + Watson Machine Learning) to build and deploy asset failure prediction models. It surfaces failure probability scores, anomaly scores, and asset end-of-life estimates directly in Maximo Health dashboards. Models are trained on historical sensor data, maintenance records, and inspection results.
 - Requires: IBM CP4D with Watson Studio (watsonx.ai) and Watson Machine Learning
 - Pre-built model templates: failure probability, anomaly detection, asset lifecycle, remaining useful life
 - AutoAI: automated model building — no data science skills required for basic models
 - Training data: pulls from Db2 Warehouse (Monitor sensor history) + Manage (work order history)
 - Scoring frequency: configurable — daily batch scoring or near-real-time (hourly)
 ### Maximo Health — Asset Health Scoring
-Maximo Health aggregates data from Manage (maintenance history, inspection results) and Predict (failure probability scores) to produce a composite asset health score (0–100). It provides portfolio-level dashboards for comparing asset health across sites, and an Investment Optimizer for capital plan
+Maximo Health aggregates data from Manage (maintenance history, inspection results) and Predict (failure probability scores) to produce a composite asset health score (0–100). It provides portfolio-level dashboards for comparing asset health across sites, and an Investment Optimizer for capital planning decisions.
 - Health score calculation: weighted formula using age, maintenance history, failure probability, inspection results
 - Score range: 0 (critical) to 100 (excellent) — configurable thresholds per asset type
 - Drilldown: site-level → system-level → individual asset health breakdown
 - Replacement prioritisation: ranked list of assets by score and replacement cost
 - Investment Optimizer: scenario modelling for capital budget allocation decisions
 ### AppPoints Licensing Model
-AppPoints is a consumption-based licensing model where each user consumes points based on which applications they access and at what level. The total AppPoints pool is shared across all users and applications. Usage is tracked in real-time by the Data Reporter Operator and reported to IBM License Me
+AppPoints is a consumption-based licensing model where each user consumes points based on which applications they access and at what level. The total AppPoints pool is shared across all users and applications. Usage is tracked in real-time by the Data Reporter Operator and reported to IBM License Metric Tool for compliance.
 - User types: Limited (read-only, low points), Base (standard use), Premium (full access)
 - AppPoints consumed per login session — released when session expires or user logs out
 - Session inactivity timeout: configurable — reclaims points from idle sessions automatically
@@ -490,7 +512,12 @@ Beyond the core 11 applications, MAS includes industry-specific business solutio
 
 ## Planning & Prerequisites
 Before installing MAS, infrastructure must meet specific OCP, storage, network, and software prerequisites. Requirements vary significantly between on-premise, AWS, Azure, and IBM Cloud deployments. IBM recommends a detailed sizing exercise before procurement.
-Key facts: OCP 4.12 minimum — 4.14 recommended for MAS 9.1 | Minimum 3 master nodes + 3–10 worker nodes depending on apps | RWX storage class mandatory — NFS, ODF, Azure Files, EFS supported | Kafka, MongoDB 8.0, CouchDB must be installed before MAS Core | IBM Suite License Service (SLS) must be deployed first — requires entitlement key | Air-gap: all images must be mirrored using oc mirror or ibm-pak tool
+- OCP 4.12 minimum — 4.14 recommended for MAS 9.1
+- Minimum 3 master nodes + 3–10 worker nodes depending on apps
+- RWX storage class mandatory — NFS, ODF, Azure Files, EFS supported
+- Kafka, MongoDB 8.0, CouchDB must be installed before MAS Core
+- IBM Suite License Service (SLS) must be deployed first — requires entitlement key
+- Air-gap: all images must be mirrored using oc mirror or ibm-pak tool
 ### OCP Cluster Sizing by Deployment Scenario
 IBM provides specific node sizing guidance based on which MAS applications will be deployed. The following reflects IBM's published minimum and recommended configurations for production deployments. Development/test environments can use lower specifications.
 - MAS Core only: 3 workers × (8 vCPU, 32 GB RAM, 100 GB disk)
@@ -536,7 +563,12 @@ Air-gapped environments have no internet access from the OCP cluster. All contai
 
 ## Installation Methods
 MAS 9.1 supports 5 installation methods: CLI (mas install), Ansible collection (ibm.mas_devops), AWS CloudFormation templates, Azure ARM templates, and IBM-managed SaaS. The Ansible collection is recommended for on-premise automation.
-Key facts: Ansible collection ibm.mas_devops is recommended for on-premise | AWS: CloudFormation stacks provision OCP + MSK + DocumentDB + EFS automatically | Air-gap: use oc mirror or ibm-pak to mirror images before install | Install order: SLS → DRO → cert-manager → Kafka → MongoDB → CouchDB → CP4D → MAS Core → Apps | CLI tool: available as a container image — docker run ibmcom/mas-cli:latest mas install | Ansible Galaxy: ansible-galaxy collection install ibm.mas_devops
+- Ansible collection ibm.mas_devops is recommended for on-premise
+- AWS: CloudFormation stacks provision OCP + MSK + DocumentDB + EFS automatically
+- Air-gap: use oc mirror or ibm-pak to mirror images before install
+- Install order: SLS → DRO → cert-manager → Kafka → MongoDB → CouchDB → CP4D → MAS Core → Apps
+- CLI tool: available as a container image — docker run ibmcom/mas-cli:latest mas install
+- Ansible Galaxy: ansible-galaxy collection install ibm.mas_devops
 ### CLI Installation — mas install Command
 The MAS CLI (mas install) is an interactive command-line tool packaged as a container image. It guides administrators through a step-by-step installation wizard, collecting configuration and orchestrating the operator installations. It supports both connected and air-gapped environments.
 - Run as container: docker run -it --rm ibmcom/mas-cli:9.1 mas install
@@ -545,7 +577,7 @@ The MAS CLI (mas install) is an interactive command-line tool packaged as a cont
 - Configuration saved: YAML manifest files in current directory for repeatability
 - Progress tracking: real-time pod status — watch oc get pods -n mas-{instance}-core
 ### Ansible Collection — ibm.mas_devops (Recommended)
-The IBM MAS Ansible DevOps collection (ibm.mas_devops) provides idempotent, fully automated installation and configuration of MAS and all prerequisites. It is the preferred method for on-premise deployments and CI/CD pipeline integration. Each component has a dedicated role that can be run independe
+The IBM MAS Ansible DevOps collection (ibm.mas_devops) provides idempotent, fully automated installation and configuration of MAS and all prerequisites. It is the preferred method for on-premise deployments and CI/CD pipeline integration. Each component has a dedicated role that can be run independently or as part of a full install playbook.
 - Install: ansible-galaxy collection install ibm.mas_devops
 - GitHub examples: github.com/ibm-mas/ansible-devops/tree/master/playbooks
 - Key roles: ibm.mas_devops.ocp_login, ibm.mas_devops.sls, ibm.mas_devops.kafka, ibm.mas_devops.mongodb, ibm.mas_devops.suite_install
@@ -582,9 +614,14 @@ MAS can be fully uninstalled using the mas uninstall command or by deleting the 
 
 ## Deployment Guide
 Deploying MAS applications involves activating each app operator at suite level, then activating it per workspace. Each application has specific database, messaging, and AI service dependencies that must be configured before activation.
-Key facts: Deploy at suite level first (operator), then activate per workspace | Manage requires Db2 or Oracle — database creation takes 30–60 min | Monitor requires Kafka + Db2 Warehouse — configure device types before use | Predict requires CP4D healthy — Watson Studio + WML must be running | Collaborate requires ICE server (STUN/TURN) for WebRTC to work across firewalls | AI Service requires watsonx.ai API endpoint + credentials from IBM Cloud
+- Deploy at suite level first (operator), then activate per workspace
+- Manage requires Db2 or Oracle — database creation takes 30–60 min
+- Monitor requires Kafka + Db2 Warehouse — configure device types before use
+- Predict requires CP4D healthy — Watson Studio + WML must be running
+- Collaborate requires ICE server (STUN/TURN) for WebRTC to work across firewalls
+- AI Service requires watsonx.ai API endpoint + credentials from IBM Cloud
 ### Deploying Maximo Manage
-Maximo Manage is the most complex MAS application to deploy due to its database requirements. The Manage operator creates the Db2 database schema automatically on first deployment — a process that takes 30–60 minutes. Manage also requires JMS configuration and supports multiple language packs and in
+Maximo Manage is the most complex MAS application to deploy due to its database requirements. The Manage operator creates the Db2 database schema automatically on first deployment — a process that takes 30–60 minutes. Manage also requires JMS configuration and supports multiple language packs and industry solutions.
 - Database: IBM Db2 11.5.x (operator-managed on OCP) or Oracle 19c / 21c (external)
 - Db2 instance sizing: minimum 16 vCPU, 64 GB RAM, 500 GB SSD for production
 - JMS: ActiveMQ (default, bundled) or IBM MQ 9.x for enterprise messaging
@@ -605,7 +642,7 @@ Maximo Predict deployment requires IBM CP4D to be fully installed and healthy wi
 - Model notebook: pre-built Jupyter notebooks for each model type — customisable
 - Training trigger: scheduled (nightly default) or manual via Predict UI
 ### Deploying Maximo Collaborate
-Maximo Collaborate enables real-time video collaboration between field technicians and remote experts. Deployment requires an ICE (Interactive Connectivity Establishment) server to handle WebRTC media relay across firewalls and NAT. Without a properly configured ICE server, video calls will fail in 
+Maximo Collaborate enables real-time video collaboration between field technicians and remote experts. Deployment requires an ICE (Interactive Connectivity Establishment) server to handle WebRTC media relay across firewalls and NAT. Without a properly configured ICE server, video calls will fail in most enterprise network environments.
 - ICE server: must support both STUN (Session Traversal Utilities for NAT) and TURN (relay)
 - Recommended ICE server: Coturn (open source) or commercial providers (Twilio, Xirsys)
 - TURN credentials: username/password — configured in Collaborate workspace settings
@@ -628,9 +665,14 @@ After deploying an application at the suite level (operator deployment), it must
 
 ## Configuration
 MAS configuration covers TLS certificate management (cert-manager, Let's Encrypt, custom CA), user authentication (LDAP, SAML 2.0, SCIM 2.0, local accounts), SMTP, workload resource customisation, CORS policy, and storage configuration — all managed via Suite Administration or Kubernetes CRs.
-Key facts: cert-manager required — manages all TLS certificates automatically via CRs | LDAP sync: pulls users from Active Directory on configurable schedule | SAML 2.0 SSO: multiple identity providers per workspace supported in 9.0+ | SCIM 2.0: real-time user provisioning from Azure AD or Okta | Workload customisation: CPU/memory limits, node affinity, tolerations per pod type | SMTP OAuth2: required for Microsoft 365 and Google Workspace from Feb 2026
+- cert-manager required — manages all TLS certificates automatically via CRs
+- LDAP sync: pulls users from Active Directory on configurable schedule
+- SAML 2.0 SSO: multiple identity providers per workspace supported in 9.0+
+- SCIM 2.0: real-time user provisioning from Azure AD or Okta
+- Workload customisation: CPU/memory limits, node affinity, tolerations per pod type
+- SMTP OAuth2: required for Microsoft 365 and Google Workspace from Feb 2026
 ### TLS Certificate Management
-MAS uses cert-manager to manage TLS certificates for all application URLs. Certificates are defined as Kubernetes Certificate resources and auto-renewed before expiry. Three certificate sources are supported: Let's Encrypt (public internet), custom CA (enterprise), and self-signed (development only)
+MAS uses cert-manager to manage TLS certificates for all application URLs. Certificates are defined as Kubernetes Certificate resources and auto-renewed before expiry. Three certificate sources are supported: Let's Encrypt (public internet), custom CA (enterprise), and self-signed (development only).
 - cert-manager: installs as operator — manages Certificate and CertificateRequest CRs
 - Let's Encrypt: use for internet-accessible clusters — requires port 80 open for HTTP-01 challenge
 - Custom CA: create ClusterIssuer CR with enterprise CA cert and key — oc apply -f ca-issuer.yaml
@@ -667,7 +709,12 @@ MAS allows fine-grained control over pod resource requests and limits, node affi
 
 ## Upgrading to MAS 9.1
 MAS supports three upgrade paths: channel subscription (automated rolling), static catalog pinning (controlled maintenance window), and manual. Upgrading from legacy Maximo Asset Management 7.x or TRIRIGA requires specific database migration steps.
-Key facts: Channel subscription: automated upgrade when new version published to channel | Static catalog: pin to specific version — upgrade manually on your schedule | Upgrade order: OCP → SLS → Prerequisites → CP4D → MAS Core → Applications | MAM 7.x → Manage: database schema migration — existing data preserved | TRIRIGA → MREF: AES encryption migration + user/file migration required | Watson Discovery must be manually removed before upgrading Assist from pre-9.0
+- Channel subscription: automated upgrade when new version published to channel
+- Static catalog: pin to specific version — upgrade manually on your schedule
+- Upgrade order: OCP → SLS → Prerequisites → CP4D → MAS Core → Applications
+- MAM 7.x → Manage: database schema migration — existing data preserved
+- TRIRIGA → MREF: AES encryption migration + user/file migration required
+- Watson Discovery must be manually removed before upgrading Assist from pre-9.0
 ### Upgrade Methods Compared
 MAS provides three upgrade methods. Channel subscription is the recommended approach for most production environments. Static catalog pinning gives precise control over which version is installed. Manual upgrade is used for complex environments with heavy customisations.
 - Channel subscription: oc edit subscription -n mas-{id}-core → update channel to v9-1 → operator auto-upgrades
@@ -683,7 +730,7 @@ The upgrade sequence must be followed strictly. Upgrading components out of orde
 - Step 4: Upgrade MongoDB (6.0 → 7.0 → 8.0 sequentially — cannot skip versions)
 - Step 5: Upgrade Kafka (Strimzi operator upgrade — auto-rolling broker upgrade)
 ### Maximo Asset Management (MAM) 7.x to Maximo Manage Migration
-Migrating from legacy Maximo Asset Management 7.x to Maximo Manage on MAS is a full platform migration, not an in-place upgrade. The process involves running database migration scripts against the existing MAM schema to bring it to the Manage schema version, then deploying Manage pointing at the mig
+Migrating from legacy Maximo Asset Management 7.x to Maximo Manage on MAS is a full platform migration, not an in-place upgrade. The process involves running database migration scripts against the existing MAM schema to bring it to the Manage schema version, then deploying Manage pointing at the migrated database.
 - Step 1: Install MAS (Core + Manage operator) on new OCP cluster in parallel with existing MAM
 - Step 2: Create Db2 database and restore MAM 7.x database schema backup
 - Step 3: Run IBM-provided migration scripts — upgrades schema from 7.6.x to Manage format
@@ -706,7 +753,12 @@ Certain applications require special handling during upgrade due to dependency c
 
 ## Administration & Monitoring
 MAS administration covers Grafana/Prometheus/OpenTelemetry observability, IBM Storage Fusion backup and restore, AppPoints license management, user session control, audit logging (SIEM integration), performance tuning, and API key management.
-Key facts: Grafana + Prometheus + OpenTelemetry: full MAS observability stack | IBM Storage Fusion: coordinated backup across MongoDB, Db2, CouchDB | AppPoints: real-time usage tracked per user — session timeout reclaims idle points | Audit log: all admin actions logged — forwardable to Splunk, QRadar, syslog | MongoDB metrics are key health indicators — monitor replication lag and connections | API keys: per-user bearer tokens for programmatic MAS API access
+- Grafana + Prometheus + OpenTelemetry: full MAS observability stack
+- IBM Storage Fusion: coordinated backup across MongoDB, Db2, CouchDB
+- AppPoints: real-time usage tracked per user — session timeout reclaims idle points
+- Audit log: all admin actions logged — forwardable to Splunk, QRadar, syslog
+- MongoDB metrics are key health indicators — monitor replication lag and connections
+- API keys: per-user bearer tokens for programmatic MAS API access
 ### Grafana, Prometheus and OpenTelemetry
 The MAS observability stack consists of Prometheus (metrics), Grafana (dashboards), and OpenTelemetry (distributed tracing). IBM provides a pre-built MAS maintenance dashboard in Grafana showing key service indicators. This stack must be installed separately after MAS Core.
 - Prometheus: installed via Community Prometheus Operator or Red Hat Monitoring — scrapes all MAS pod metrics
@@ -749,28 +801,19 @@ MAS exposes REST APIs for all core functions — user management, asset manageme
 - MAS Admin REST API: https://admin.{workspace}.{cluster-domain}/api/v1/ — suite management
 - Manage REST API: https://manage.{workspace}.{cluster-domain}/maximo/oslc/os/ — EAM data
 - Manage API docs: /maximo/api/docs — Swagger UI with all available object structures
-`
+`;
 
-var SYSTEM_PROMPT_EN = `You are an expert assistant for IBM Maximo Application Suite (MAS) 9.1, embedded in the official maxTeam documentation portal.
-
-You have access to the full MAS 9.1 documentation below. Answer questions accurately based on this content. Be concise, clear, and technical when needed. If the user asks in French, answer in French. If asked in English, answer in English.
-
-Always structure your answers with:
-- A direct answer first
-- Bullet points for lists or steps
-- Specific version numbers, commands, or config values when relevant
-
-DOCUMENTATION:
-` + MAS_DOC;
+var SYS_PROMPT = 'You are an expert assistant for IBM Maximo Application Suite (MAS) 9.1, embedded in the maxTeam documentation portal. '
+  + 'Answer questions accurately using the documentation provided. Be concise, clear, and technical. '
+  + 'Answer in the same language as the user (English or French). Use bullet points and structure when helpful.\n\n'
+  + 'DOCUMENTATION:\n' + MAS_DOC;
 
 function send() {
-  // Detect file:// protocol
   if (window.location.protocol === 'file:') {
     addRaw('bot', '<div style="background:rgba(192,120,0,0.08);border:1px solid rgba(192,120,0,0.3);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--amber);line-height:1.6;">'
-      + '<strong>&#9888; Local file detected</strong><br>'
-      + 'The AI chatbot requires the file to be served from a web server (CORS restriction).<br>'
-      + 'Upload to GitHub Pages to enable the chatbot, or run a local server:<br>'
-      + '<code style="font-size:11px;background:var(--surface2);padding:2px 6px;border-radius:3px;">npx serve .</code>'
+      + '<strong>&#9888; Fichier local détecté</strong><br>'
+      + 'Le chatbot nécessite un serveur web. Déployez sur GitHub Pages ou lancez :<br>'
+      + '<code style="font-size:11px;background:var(--surface2);padding:2px 6px;border-radius:3px;font-family:IBM Plex Mono,monospace;">npx serve .</code>'
       + '</div>');
     return;
   }
@@ -779,7 +822,6 @@ function send() {
   if (!q) return;
   inp.value = ''; inp.style.height = 'auto';
 
-  // Expand chat
   document.getElementById('cf').classList.add('expanded');
   var cb = document.getElementById('chipsBar');
   if (cb) cb.style.display = 'none';
@@ -787,77 +829,55 @@ function send() {
   addMsg('user', q);
   showThinking();
 
-  // Build history for multi-turn
-  chatHistory.push({ role: 'user', parts: [{ text: q }] });
+  chatHistory.push({ role: 'user', content: q });
+  var messages = [{ role: 'system', content: SYS_PROMPT }].concat(chatHistory.slice(-10));
 
-  // Keep last 10 turns to stay within limits
-  var historyToSend = chatHistory.slice(-10);
-
-  var sysText = 'You are an expert assistant for IBM Maximo Application Suite (MAS) 9.1, embedded in the maxTeam documentation portal. '
-    + 'Answer based on this documentation. Be concise and technical. Answer in the same language as the user (EN or FR).\n\n'
-    + 'DOCUMENTATION:\n' + MAS_DOC;
-
-  var body = {
-    system_instruction: { parts: [{ text: sysText }] },
-    contents: historyToSend,
-    generationConfig: {
-      temperature: 0.3,
-      maxOutputTokens: 1024
-    }
-  };
-
-  fetch(GEMINI_URL, {
+  fetch(GROQ_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + GROQ_KEY
     },
-    mode: 'cors',
-    body: JSON.stringify(body)
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: messages,
+      temperature: 0.3,
+      max_tokens: 1024,
+      stream: false
+    })
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
     removeThinking();
     if (data.error) {
-      console.error('Gemini API error:', data.error);
-      addRaw('bot', '<span style="color:var(--amber);">API Error ' + data.error.code + ': ' + data.error.message + '</span>');
+      console.error('Groq error:', data.error);
+      addRaw('bot', '<span style="color:var(--amber);">Error: ' + data.error.message + '</span>');
       chatHistory.pop();
       return;
     }
-    var reply = data.candidates &&
-                data.candidates[0] &&
-                data.candidates[0].content &&
-                data.candidates[0].content.parts &&
-                data.candidates[0].content.parts[0].text
-                ? data.candidates[0].content.parts[0].text
-                : 'Sorry, no response received.';
-    chatHistory.push({ role: 'model', parts: [{ text: reply }] });
+    var reply = data.choices && data.choices[0] && data.choices[0].message
+      ? data.choices[0].message.content
+      : 'No response received.';
+    chatHistory.push({ role: 'assistant', content: reply });
     addRaw('bot', formatReply(reply));
   })
   .catch(function(err) {
     removeThinking();
     chatHistory.pop();
-    console.error('Gemini error:', err);
-    addRaw('bot', '<span style="color:var(--amber);">Error: ' + (err.message || err) + '</span>');
+    console.error('Groq fetch error:', err);
+    addRaw('bot', '<span style="color:var(--amber);">Connection error: ' + (err.message || err) + '</span>');
   });
 }
 
 function formatReply(text) {
-  // Convert markdown-style to HTML
   text = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    // Bold **text**
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    // Bullet points
+    .replace(/^#{1,3}\s+(.+)$/gm, '<div style="font-weight:600;color:var(--header);margin:8px 0 4px;">$1</div>')
     .replace(/^[-•]\s+(.+)$/gm, '<li>$1</li>')
-    // Numbered lists
     .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
-    // Code `inline`
     .replace(/`([^`]+)`/g, '<code style="background:var(--surface2);padding:1px 5px;border-radius:3px;font-family:IBM Plex Mono,monospace;font-size:11px;">$1</code>')
-    // Wrap consecutive <li> in <ul>
-    .replace(/(<li>.*?<\/li>(\n|$))+/gs, function(m){ return '<ul style="margin:6px 0;padding-left:16px;list-style:disc;">' + m + '</ul>'; })
-    // Line breaks
+    .replace(/(<li>.*?<\/li>\n?)+/g, function(m){ return '<ul style="margin:6px 0 6px 4px;padding-left:14px;list-style:disc;">' + m + '</ul>'; })
     .replace(/\n\n/g, '<br><br>')
     .replace(/\n/g, '<br>');
   return text;
