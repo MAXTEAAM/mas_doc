@@ -320,501 +320,15 @@ var GROQ_KEY = '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';
 var GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 var chatHistory = [];
 
-var MAS_DOC = `## Overview & Technical Architecture
-IBM Maximo Application Suite (MAS) 9.1 is an integrated, cloud-native enterprise asset management platform built on Red Hat OpenShift Container Platform. It consolidates EAM, IoT monitoring, AI-based predictive maintenance, and computer vision under a single AppPoints license model.
-- Latest release: MAS 9.1.9 — February 2026
-- Requires Red Hat OpenShift Container Platform 4.12+
-- Minimum 3 master nodes (16 vCPU / 32 GB RAM each)
-- All components deployed as Kubernetes Operators
-- Single AppPoints pool covers all MAS applications
-- Supports AWS, Azure, IBM Cloud, on-premise, SaaS, SNO
-### What is Maximo Application Suite?
-MAS is IBM's unified platform for enterprise asset management, condition monitoring, and AI-driven maintenance intelligence. It replaces the legacy Maximo Asset Management 7.x product and consolidates previously separate IBM products — Maximo, Monitor, Predict, Visual Inspection, Assist, TRIRIGA, and Watson IoT — into a single Kubernetes-native deployment. Every application is managed by an OpenSh
-- Replaces: Maximo Asset Management 7.x, IBM TRIRIGA, Watson IoT Platform, Maximo Visual Inspection (standalone)
-- Deployment model: Kubernetes Operators on Red Hat OpenShift Container Platform (OCP)
-- License model: AppPoints — one pool consumed across all apps, all users
-- Available as self-managed (on-premise or cloud IaaS) or fully IBM-managed SaaS
-- Continuous Delivery (CD) release channel: monthly updates via operator subscription
-### OpenShift Control Plane
-The OCP control plane manages the entire Kubernetes cluster lifecycle. A minimum of 3 master nodes is required for high availability via etcd quorum. The control plane runs the Kubernetes API server, scheduler, controller manager, and etcd. MAS components are deployed as operators in their own namespaces, each managed by the OCP Operator Lifecycle Manager (OLM).
-- Minimum 3 master nodes — must be odd number for etcd quorum
-- Recommended master node sizing: 8 vCPU, 32 GB RAM, 120 GB SSD per node
-- etcd: distributed key-value store — stores all cluster state and Kubernetes CRs
-- OCP version: 4.12 minimum — 4.14 recommended for MAS 9.1
-- Operator Lifecycle Manager (OLM): manages operator installs and upgrades
-### OpenShift Data Plane — Worker Nodes
-Worker nodes host all MAS application pods. Node sizing depends heavily on which MAS applications are deployed. IBM recommends dedicated node groups (using node labels and taints) for databases, AI workloads, and MAS application pods to prevent resource contention. Storage must provide both ReadWriteOnce (RWO) and ReadWriteMany (RWX) storage classes before installation.
-- Minimum worker nodes: 3 for core only — up to 10+ for full suite with CP4D
-- Recommended worker node: 16 vCPU, 64 GB RAM, 200 GB SSD (production)
-- Storage classes required: RWO (block) and RWX (shared filesystem)
-- Data Foundation provides: image registry, Prometheus metrics, Elasticsearch logging
-- Node labelling: use node selectors to pin DB pods to high-I/O nodes
-### MAS Namespace Architecture
-MAS uses a structured namespace layout in OpenShift. Each component gets its own namespace, providing RBAC isolation and resource quota control. The mas-core namespace is the suite control plane; each workspace gets its own namespace per application.
-- ibm-sls — IBM Suite License Service namespace
-- ibm-common-services — IBM Cloud Pak foundational services
-- mas-{instance-id}-core — MAS Core: user registry, workspace management
-- mas-{instance-id}-manage — Maximo Manage application namespace
-- mas-{instance-id}-monitor — Maximo Monitor namespace
-### High Availability Architecture
-MAS is designed for production HA. All critical stateful components run in multi-replica configurations with automatic failover. OpenShift handles pod rescheduling during node failures. Data replication is configured at the component level — MongoDB ReplicaSet, Kafka partition replication, Db2 HADR.
-- MongoDB: 3-node ReplicaSet by default — 1 primary, 2 secondaries with automatic failover
-- Kafka: multi-broker cluster with replication factor 3 for all topics
-- Db2 Warehouse: HADR (High Availability Disaster Recovery) with standby instance
-- MAS Core pods: minimum 2 replicas with pod anti-affinity rules
-- OCP router: HAProxy with active-passive failover across ingress nodes
-### Network Architecture
-MAS requires specific network configuration for both internal cluster communication and external user access. All external traffic flows through the OCP ingress (HAProxy router). Wildcard DNS is mandatory. For Maximo Collaborate, an ICE server (STUN/TURN) handles WebRTC NAT traversal.
-- Wildcard DNS: *.apps.{cluster-domain} → ingress load balancer IP (mandatory)
-- Internal cluster network: OVN-Kubernetes or OpenShift SDN CNI plugin
-- External access: OCP router (HAProxy) on ports 80 and 443
-- IBM Container Registry access required: cp.icr.io port 443 (or local mirror for air-gap)
-- ICE server (STUN/TURN): required for Maximo Collaborate WebRTC — ports 3478, 5349
-
-## Getting Started
-Your starting point in MAS depends on your role. Application users access their app URL directly. Application admins configure apps in Suite Administration. Suite admins manage the full platform including deployment, identity, and certificates. SaaS admins use a separate IBM-managed portal.
-- App user URL: {app}.{workspace}.{cluster-apps-domain}
-- Suite Admin URL: admin.{workspace}.{cluster-apps-domain}
-- AppPoints consumed on login — configure timeout to reclaim idle points
-- SaaS: IBM manages infrastructure — you manage apps, users, and AppPoints
-- First login: change password immediately if using local accounts
-- Mobile: Maximo Mobile app (iOS/Android) for field technician access to Manage
-### Application User
-End users access MAS applications directly via their application URL. Authentication is via SSO (SAML), LDAP credentials, or a local account depending on what your administrator configured. AppPoints are consumed automatically on login and released on logout or session timeout.
-- Access URL: {app}.{workspace}.{apps-domain} — ask your admin for the exact URL
-- SSO: click the enterprise SSO button on the login page — no separate password needed
-- Locale: set language and timezone in Profile → Preferences — applies to all MAS apps
-- Maximo Mobile: download IBM Maximo Mobile from App Store or Google Play — same credentials
-- Session: AppPoints consumed per session — log out when done to release points for others
-### Application Administrator
-Application administrators configure individual MAS applications within Suite Administration. They manage user access, AppPoints allocation, and application-specific settings within the workspace they are responsible for.
-- Access: Suite Admin URL → login with admin credentials
-- User management: Users → Create user → assign role and AppPoints group
-- AppPoints groups: create groups with AppPoints allocations → assign users to groups
-- App configuration: Workspace → {app} tab → configure DB, SMTP, and app-specific settings
-- Usage reports: License → AppPoints → Export CSV — monthly compliance reporting
-### Suite Administrator
-Suite administrators have full control over the MAS platform. They deploy and upgrade applications, configure identity providers, manage TLS certificates, and monitor platform health via Grafana dashboards. This role requires both MAS administration knowledge and OCP/Kubernetes skills.
-- OCP access: oc login https://api.{cluster-domain}:6443 --token={token}
-- Deploy apps: Suite Admin → Catalog → select application → Deploy (triggers operator installation)
-- Identity: Suite Admin → Identity → configure LDAP, SAML, or SCIM 2.0 providers
-- Certificates: oc get certificate -A — check all certs are Ready; cert-manager auto-renews
-- Monitoring: Grafana dashboard — check pod health, request latency, DB connection pools
-### SaaS Administrator
-For MAS as a Service deployments, IBM manages all infrastructure including the OCP cluster, prerequisites, certificates, and upgrades. SaaS administrators focus exclusively on application configuration and user management through a dedicated IBM SaaS portal.
-- SaaS portal: IBM manages OCP, Kafka, MongoDB, certificates, and patches automatically
-- Your responsibilities: user management, AppPoints, app configuration, SMTP, LDAP/SAML
-- AppPoints purchase: IBM SaaS portal → Billing → AppPoints → Add capacity
-- Incident support: IBM Support ticket for infrastructure issues — 24x7 SRE team
-- Maintenance windows: IBM notifies 14 days in advance for planned upgrades
-
-## What's New in MAS 9.1
-MAS 9.1 delivers IBM watsonx integration, three new applications (Maximo IT, Maximo AI Service, expanded Collaborate), SMTP OAuth2, IBM Power/Z architecture support, MongoDB 8.0, CloudPak for Data 5.2 with Python 3.12, and major administration UX improvements.
-- 3 new apps: Maximo IT, Maximo AI Service, enhanced Collaborate
-- Watson Studio rebranded → IBM watsonx.ai
-- MongoDB 8.0 supported from 9.1.6 (Nov 2025)
-- CP4D 5.2 + Python 3.12 from 9.1.7 (Dec 2025)
-- SMTP OAuth2 for Microsoft 365 / Google Workspace (Feb 2026)
-- IBM Power (ppc64le) and IBM Z (s390x) support since 9.0.12
-### IBM watsonx Integration
-MAS 9.1 replaces Watson Studio branding with IBM watsonx.ai. Maximo AI Service is a new add-on that connects Maximo Manage directly to the watsonx AI framework, enabling generative AI features — natural language work order generation, failure root cause analysis, and asset data querying using LLMs. Watson Discovery is no longer a dependency of Maximo Assist in 9.0+ (removed — contact IBM Support b
-- Watson Studio → now branded IBM watsonx.ai inside CloudPak for Data 5.x
-- Maximo AI Service: new operator connecting Manage to watsonx.ai LLM endpoints
-- Watsonx.ai features in Manage: AI work order generation, NL asset queries, failure analysis
-- Watson Discovery removed from Maximo Assist dependencies in 9.0 — must be manually removed before upgrade
-- IBM watsonx.data: optional data lakehouse integration for large-scale asset data analytics
-### New Application — Maximo IT
-Maximo IT provides a unified IT and OT (operational technology) service management platform. It handles IT helpdesk incidents, service requests, and change management alongside OT asset maintenance — giving organizations a single pane of glass for both domains. Available in SaaS Standard and Premium editions from December 2024.
-- ITSM capabilities: incident, problem, change, and service request management
-- OT integration: links IT incidents to physical asset work orders in Maximo Manage
-- CMDB: configuration management database for IT and OT assets in one system
-- SLA management: configurable service level agreements with escalation rules
-- Self-service portal: end-user ticket submission without helpdesk agent involvement
-### MongoDB 8.0 and CP4D 5.2 Support
-Two critical prerequisite updates were delivered in late 2025 fix packs. MongoDB 8.0 brings improved performance and query planning. IBM CloudPak for Data 5.2 upgrades the Python runtime to 3.12, which improves ML model training performance in Watson Studio (watsonx.ai).
-- MongoDB 8.0: supported from MAS 9.1.6, 9.0.17, 8.11.28, 8.10.31 (November 2025)
-- Backup MongoDB before any version upgrade — data migration required from 6.x to 8.0
-- Cannot skip MongoDB versions — must upgrade 6.0 → 7.0 → 8.0 sequentially
-- IBM CP4D 5.2: supported from MAS 9.1.7, 9.0.18, 8.11.29, 8.10.32 (December 2025)
-- CP4D 5.2 uses Python 3.12 — custom model code must be Python 3.12 compatible
-### SMTP OAuth2 Authentication
-MAS 9.1.9 (February 2026) adds OAuth2 authentication for outbound SMTP. This replaces basic username/password SMTP auth, which Microsoft 365 and Google Workspace deprecated in 2024. Required for organizations that use these email platforms for MAS system notifications.
-- Available in: MAS 9.1.9, 9.0.20, 8.11.31, 8.10.34 (February 2026)
-- Configure in: Suite Administration → Email → SMTP Configuration
-- Supported providers: Microsoft 365 (Exchange Online), Google Workspace Gmail
-- OAuth2 flow: Client Credentials grant — app registration in Azure AD or Google
-- Required fields: Client ID, Client Secret, Token URL, SMTP host, port 587
-### IBM Power and IBM Z Architecture Support
-MAS Core and Maximo Manage 9.0.12+ can now run natively on IBM Power (ppc64le) and IBM System Z / LinuxONE (s390x) platforms. This enables organizations with existing IBM enterprise infrastructure to run MAS without requiring x86 commodity servers.
-- IBM Power (ppc64le): full MAS Core + Manage support from 9.0.12
-- IBM Z / LinuxONE (s390x): full MAS Core + Manage support from 9.0.12
-- MongoDB constraint: must use external MongoDB service on ppc64le and s390x — community operator not supported
-- Db2 constraint: external Db2 instance supported — Db2 operator may have limitations
-- Grafana operators: NOT supported on ppc64le or s390x — use alternative monitoring
-### Administration UX Improvements
-The Suite Administration interface was redesigned in MAS 9.1 with a new side navigation model that separates catalog browsing from day-to-day application management. User management received significant updates including a new immutable User ID field, locale/timezone at creation time, and improved multi-user search.
-- New side navigation: Applications, Workspace, Catalog, Users, Licenses separated
-- Applications page: manage deployed apps (activate, version, disable, delete) post-deploy
-- Workspace page: update config, download debug info, manage external launchers
-- User ID field: new immutable internal identifier — separate from changeable username
-- User creation: locale and timezone configurable at creation (not just after login)
-
-## Applications, Add-ons & Licensing
-MAS 9.1 includes 11 core applications, 3 industry business solutions, and 5 add-on tools — all licensed via AppPoints. Each application is an independent Kubernetes Operator consuming from a single shared license pool.
-- 11 core applications in MAS 9.1
-- AppPoints: consumption-based — Limited, Base, Premium tiers per user
-- Each app is a separate Kubernetes Operator in its own namespace
-- Business solutions: Health+Predict Utilities, MRO Optimization, Civil Infrastructure
-- Add-ons: MVI Edge, Parts Identifier, App Connect, Optimizer, Accelerators
-- AppPoints usage reported in real-time via Data Reporter Operator (DRO)
-### Maximo Manage — EAM Core
-Maximo Manage is the enterprise asset management backbone of MAS, replacing legacy Maximo Asset Management 7.x. It manages the full asset lifecycle — from procurement and installation through maintenance, inspection, and decommission. It uses IBM Db2 or Oracle Database as its backend and supports multi-tenancy via workspaces.
-- Asset management: hierarchical asset register, asset specifications, failure codes, meters
-- Work management: work orders, job plans, safety plans, labour reporting, PM scheduling
-- Inventory: storerooms, items, inventory transactions, reorder points, vendor catalogues
-- Purchasing: requisitions, purchase orders, receipts, invoices, contracts
-- Database: IBM Db2 (default) or Oracle Database — schema created automatically on first deploy
-### Maximo Monitor — IoT Monitoring
-Maximo Monitor provides real-time condition monitoring for connected assets using IoT sensor data. It ingests data via Kafka (MQTT or HTTP), stores time-series data in Db2 Warehouse, and displays configurable dashboards with anomaly detection alerts. It integrates with Maximo Manage to automatically create work orders when asset conditions exceed thresholds.
-- Data ingestion: MQTT (port 1883/8883) and HTTP/HTTPS device APIs via Kafka
-- Storage: Db2 Warehouse for time-series sensor data — columnar format for fast aggregation
-- Dashboard cards: metric, image, bar chart, value card, alert card, table card types
-- Anomaly detection: built-in ML models (KMeans, Regression) auto-trained on historical data
-- Alert rules: threshold-based, statistical (standard deviation), ML anomaly score-based
-### Maximo Predict — AI Failure Prediction
-Maximo Predict uses IBM CloudPak for Data (Watson Studio + Watson Machine Learning) to build and deploy asset failure prediction models. It surfaces failure probability scores, anomaly scores, and asset end-of-life estimates directly in Maximo Health dashboards. Models are trained on historical sensor data, maintenance records, and inspection results.
-- Requires: IBM CP4D with Watson Studio (watsonx.ai) and Watson Machine Learning
-- Pre-built model templates: failure probability, anomaly detection, asset lifecycle, remaining useful life
-- AutoAI: automated model building — no data science skills required for basic models
-- Training data: pulls from Db2 Warehouse (Monitor sensor history) + Manage (work order history)
-- Scoring frequency: configurable — daily batch scoring or near-real-time (hourly)
-### Maximo Health — Asset Health Scoring
-Maximo Health aggregates data from Manage (maintenance history, inspection results) and Predict (failure probability scores) to produce a composite asset health score (0–100). It provides portfolio-level dashboards for comparing asset health across sites, and an Investment Optimizer for capital planning decisions.
-- Health score calculation: weighted formula using age, maintenance history, failure probability, inspection results
-- Score range: 0 (critical) to 100 (excellent) — configurable thresholds per asset type
-- Drilldown: site-level → system-level → individual asset health breakdown
-- Replacement prioritisation: ranked list of assets by score and replacement cost
-- Investment Optimizer: scenario modelling for capital budget allocation decisions
-### AppPoints Licensing Model
-AppPoints is a consumption-based licensing model where each user consumes points based on which applications they access and at what level. The total AppPoints pool is shared across all users and applications. Usage is tracked in real-time by the Data Reporter Operator and reported to IBM License Metric Tool for compliance.
-- User types: Limited (read-only, low points), Base (standard use), Premium (full access)
-- AppPoints consumed per login session — released when session expires or user logs out
-- Session inactivity timeout: configurable — reclaims points from idle sessions automatically
-- Data Reporter Operator (DRO): submits hourly usage reports to IBM License Service
-- Entitlement key: obtained from IBM Entitled Registry — must be renewed annually
-### Add-ons and Business Solutions
-Beyond the core 11 applications, MAS includes industry-specific business solutions and technical add-on tools. These extend the platform for specific use cases and are deployed separately as additional operators.
-- MVI Edge: deploy computer vision models to edge devices (cameras, gateways) without cloud connectivity
-- IBM Parts Identifier: AI model to identify spare parts from photos — integrates with Manage inventory
-- MRO Inventory Optimization: statistical models to optimise spare parts stock levels and reorder points
-- Health and Predict — Utilities: pre-built models and workflows for utility industry (power, water, gas)
-- App Connect: IBM enterprise integration middleware for connecting Manage to SAP, Oracle, Salesforce
-
-## Planning & Prerequisites
-Before installing MAS, infrastructure must meet specific OCP, storage, network, and software prerequisites. Requirements vary significantly between on-premise, AWS, Azure, and IBM Cloud deployments. IBM recommends a detailed sizing exercise before procurement.
-- OCP 4.12 minimum — 4.14 recommended for MAS 9.1
-- Minimum 3 master nodes + 3–10 worker nodes depending on apps
-- RWX storage class mandatory — NFS, ODF, Azure Files, EFS supported
-- Kafka, MongoDB 8.0, CouchDB must be installed before MAS Core
-- IBM Suite License Service (SLS) must be deployed first — requires entitlement key
-- Air-gap: all images must be mirrored using oc mirror or ibm-pak tool
-### OCP Cluster Sizing by Deployment Scenario
-IBM provides specific node sizing guidance based on which MAS applications will be deployed. The following reflects IBM's published minimum and recommended configurations for production deployments. Development/test environments can use lower specifications.
-- MAS Core only: 3 workers × (8 vCPU, 32 GB RAM, 100 GB disk)
-- Core + Manage: 3 workers × (16 vCPU, 64 GB RAM, 200 GB disk)
-- Core + Manage + Monitor + CP4D: 6 workers × (16 vCPU, 64 GB RAM, 300 GB disk)
-- Full suite (all apps): 9–12 workers × (16–32 vCPU, 64–128 GB RAM, 500 GB disk)
-- Dedicated DB nodes recommended: 3 × (16 vCPU, 128 GB RAM, 2 TB NVMe) for Db2 + MongoDB
-### Software Prerequisites — Versions and Operators
-MAS requires a specific set of prerequisite software to be installed and healthy before MAS Core can be deployed. Each prerequisite has its own operator or Helm chart. Installation order is strict and must be followed exactly.
-- IBM Suite License Service (SLS) 3.x — must be first, requires IBM entitlement key
-- IBM Data Reporter Operator (DRO) — license usage tracking, reports to IBM ILMT
-- cert-manager 1.10+ (from cert-manager or Red Hat cert-manager operator)
-- Apache Kafka 3.x (Strimzi operator) OR Amazon MSK (AWS deployments)
-- MongoDB Community Operator 0.9+ with MongoDB 6.0 → 7.0 → 8.0 upgrade path
-### Storage Requirements
-Storage is one of the most critical planning decisions for MAS. Multiple storage classes must be available before installation. IBM OpenShift Data Foundation (ODF), formerly OpenShift Container Storage (OCS), is the recommended storage solution for on-premise deployments.
-- RWO (ReadWriteOnce): required for Db2, MongoDB, Kafka — block storage (SSD recommended)
-- RWX (ReadWriteMany): required for Manage shared documents, MVI models — NFS or ODF CephFS
-- Minimum storage provisioned: 2 TB total for core + Manage deployment
-- Manage document storage: minimum 500 GB RWX — grows with attachments and reports
-- MongoDB storage: 100 GB per replica × 3 replicas = 300 GB minimum RWO
-### Network Ports and Firewall Rules
-MAS requires several ports to be open between the OCP cluster, users, and external services. Firewall configuration must be completed before installation. The following ports apply to production deployments.
-- 443 (HTTPS): all user-facing MAS application URLs — ingress router
-- 6443 (HTTPS): OCP API server — required for oc CLI and operators
-- 443 outbound: IBM Container Registry (cp.icr.io) — image pulls
-- 3478 / 5349: STUN/TURN ICE server — required for Maximo Collaborate WebRTC
-- 587 (SMTP/STARTTLS): outbound email for system notifications
-### AWS-Specific Planning
-AWS deployments use CloudFormation templates and AWS managed services to replace self-managed prerequisites. This reduces operational overhead but requires specific IAM permissions and VPC pre-configuration before running the CloudFormation stacks.
-- Amazon MSK: replaces self-managed Kafka — kafka.m5.large instance minimum
-- Amazon DocumentDB: replaces MongoDB — db.r6g.large instance minimum per replica
-- Amazon EFS: provides RWX storage class — must be created in same VPC as OCP cluster
-- IAM permissions: CloudFormation needs EC2, EFS, MSK, DocumentDB, VPC, IAM full access
-- VPC: must have private and public subnets across 3 AZs — OCP worker nodes in private subnets
-### Air-Gap (Disconnected) Installation Planning
-Air-gapped environments have no internet access from the OCP cluster. All container images must be pre-mirrored to a local registry accessible from the cluster. IBM provides tooling (oc mirror plugin and ibm-pak) specifically for this process.
-- Tools: oc mirror plugin (OCP built-in) or ibm-pak CLI — both produce ImageContentSourcePolicy CRs
-- Local registry: Harbor, Nexus, Quay, or any OCI-compliant registry — must be accessible from cluster
-- Image catalog: MAS 9.1 full mirror requires ~200–400 GB registry storage
-- ibm-pak command: ibm-pak get -c ibm-maximo-application-suite --version 9.1.x
-- ImageContentSourcePolicy: CR that redirects image pulls from cp.icr.io to local registry
-
-## Installation Methods
-MAS 9.1 supports 5 installation methods: CLI (mas install), Ansible collection (ibm.mas_devops), AWS CloudFormation templates, Azure ARM templates, and IBM-managed SaaS. The Ansible collection is recommended for on-premise automation.
-- Ansible collection ibm.mas_devops is recommended for on-premise
-- AWS: CloudFormation stacks provision OCP + MSK + DocumentDB + EFS automatically
-- Air-gap: use oc mirror or ibm-pak to mirror images before install
-- Install order: SLS → DRO → cert-manager → Kafka → MongoDB → CouchDB → CP4D → MAS Core → Apps
-- CLI tool: available as a container image — docker run ibmcom/mas-cli:latest mas install
-- Ansible Galaxy: ansible-galaxy collection install ibm.mas_devops
-### CLI Installation — mas install Command
-The MAS CLI (mas install) is an interactive command-line tool packaged as a container image. It guides administrators through a step-by-step installation wizard, collecting configuration and orchestrating the operator installations. It supports both connected and air-gapped environments.
-- Run as container: docker run -it --rm ibmcom/mas-cli:9.1 mas install
-- Requires: kubectl/oc access, IBM entitlement key, license file
-- Interactive prompts: cluster domain, instance ID, workspace ID, app selection, DB config
-- Configuration saved: YAML manifest files in current directory for repeatability
-- Progress tracking: real-time pod status — watch oc get pods -n mas-{instance}-core
-### Ansible Collection — ibm.mas_devops (Recommended)
-The IBM MAS Ansible DevOps collection (ibm.mas_devops) provides idempotent, fully automated installation and configuration of MAS and all prerequisites. It is the preferred method for on-premise deployments and CI/CD pipeline integration. Each component has a dedicated role that can be run independently or as part of a full install playbook.
-- Install: ansible-galaxy collection install ibm.mas_devops
-- GitHub examples: github.com/ibm-mas/ansible-devops/tree/master/playbooks
-- Key roles: ibm.mas_devops.ocp_login, ibm.mas_devops.sls, ibm.mas_devops.kafka, ibm.mas_devops.mongodb, ibm.mas_devops.suite_install
-- Environment variables: IBM_ENTITLEMENT_KEY, MAS_INSTANCE_ID, MAS_WORKSPACE_ID — no interactive prompts
-- Idempotent: safe to re-run — skips already-complete steps, applies only delta changes
-### AWS CloudFormation Installation
-IBM provides CloudFormation (CF) templates that provision all required AWS infrastructure and install MAS in a single automated workflow. Separate CF stacks handle OCP cluster creation, MAS Core installation, and optional CP4D (Watson AI) installation.
-- Stack 1: ROSA or self-managed OCP on EC2 — provisions VPC, subnets, OCP cluster
-- Stack 2: MAS Core — installs SLS, DRO, cert-manager, MSK, DocumentDB, MAS Core
-- Stack 3 (optional): CP4D — installs CloudPak for Data with Watson Studio + WML
-- Stack 4 (optional): Monitor — Db2 Warehouse + Maximo Monitor deployment
-- Let's Encrypt: auto-configured for internet-accessible AWS clusters (port 80 must be reachable)
-### Post-Installation Configuration Steps
-After MAS Core is installed and healthy, a mandatory set of configuration steps must be completed before users can access any application. These steps are performed in Suite Administration and are not automated by the installer.
-- Step 1: Create workspace — Suite Admin → Create workspace (e.g., workspace ID: masdev)
-- Step 2: Configure identity provider — LDAP, SAML, or activate local accounts for testing
-- Step 3: Deploy applications — Suite Admin → Catalog → select apps → Deploy
-- Step 4: Activate apps in workspace — Workspace → App tab → Activate
-- Step 5: Configure SMTP — Administration → Email → SMTP settings for notifications
-### Installation Troubleshooting
-Common installation failures and their diagnostic steps. Most failures are caused by storage misconfiguration, image pull errors, or insufficient resource quotas on worker nodes.
-- Pod in Pending: oc describe pod {pod-name} -n {namespace} — check for storage or resource issues
-- ImagePullBackOff: verify IBM entitlement key — oc get secret ibm-entitlement-key -n mas-{id}-core
-- SLS not healthy: check oc logs -n ibm-sls -l app=ibm-sls — usually license file or network issue
-- Cert-manager errors: oc get certificaterequests -A — check ClusterIssuer configuration
-- MongoDB not ready: oc get pods -n mongodb — ReplicaSet must show 3/3 Running
-### Uninstallation
-MAS can be fully uninstalled using the mas uninstall command or by deleting the Kubernetes Custom Resources. Uninstalling removes all MAS namespaces, operators, and configuration — but does not delete persistent storage volumes by default.
-- CLI: mas uninstall — interactive prompts for instance ID and confirmation
-- Manual: oc delete masapplication --all -n mas-{id}-core — triggers operator cleanup
-- AWS: delete CloudFormation stack — removes all AWS resources including EC2, MSK, DocumentDB
-- Azure: az group delete --name {resource-group} — removes ARM deployment and all resources
-- Data retention: PersistentVolumeClaims kept by default — manually delete if no longer needed
-
-## Deployment Guide
-Deploying MAS applications involves activating each app operator at suite level, then activating it per workspace. Each application has specific database, messaging, and AI service dependencies that must be configured before activation.
-- Deploy at suite level first (operator), then activate per workspace
-- Manage requires Db2 or Oracle — database creation takes 30–60 min
-- Monitor requires Kafka + Db2 Warehouse — configure device types before use
-- Predict requires CP4D healthy — Watson Studio + WML must be running
-- Collaborate requires ICE server (STUN/TURN) for WebRTC to work across firewalls
-- AI Service requires watsonx.ai API endpoint + credentials from IBM Cloud
-### Deploying Maximo Manage
-Maximo Manage is the most complex MAS application to deploy due to its database requirements. The Manage operator creates the Db2 database schema automatically on first deployment — a process that takes 30–60 minutes. Manage also requires JMS configuration and supports multiple language packs and industry solutions.
-- Database: IBM Db2 11.5.x (operator-managed on OCP) or Oracle 19c / 21c (external)
-- Db2 instance sizing: minimum 16 vCPU, 64 GB RAM, 500 GB SSD for production
-- JMS: ActiveMQ (default, bundled) or IBM MQ 9.x for enterprise messaging
-- Schema deployment: first activation triggers maxinst — creates 1,200+ tables, takes 30–60 min
-- Language packs: en, fr, de, es, pt, zh, ja supported — installed separately per workspace
-### Deploying Maximo Monitor
-Maximo Monitor requires Kafka for real-time IoT data ingestion and Db2 Warehouse for time-series storage. Device types (asset templates) must be defined before devices can send data. Monitor supports thousands of concurrent connected devices.
-- Kafka topics: auto-created per device type — naming: iot-{device-type}-{tenant-id}
-- Db2 Warehouse: dedicated instance recommended — separate from Manage Db2
-- Device types: define schema (metrics, dimensions, event types) before connecting devices
-- Device credentials: MQTT username/password or client certificate per device
-- MQTT ingestion: IoT Edge gateway or direct device connection to Kafka MQTT broker
-### Deploying Maximo Predict
-Maximo Predict deployment requires IBM CP4D to be fully installed and healthy with Watson Studio and Watson Machine Learning services running. The Predict operator deploys data pipelines that pull training data from Db2 Warehouse and Manage, then push trained models to WML for scoring.
-- CP4D prerequisite: Watson Studio (watsonx.ai) + Watson Machine Learning both must be in Ready state
-- CP4D service instances: create WS and WML service instances in CP4D before activating Predict
-- Data pipeline: Predict pulls asset + sensor history from Db2 and Manage via JDBC
-- Model notebook: pre-built Jupyter notebooks for each model type — customisable
-- Training trigger: scheduled (nightly default) or manual via Predict UI
-### Deploying Maximo Collaborate
-Maximo Collaborate enables real-time video collaboration between field technicians and remote experts. Deployment requires an ICE (Interactive Connectivity Establishment) server to handle WebRTC media relay across firewalls and NAT. Without a properly configured ICE server, video calls will fail in most enterprise network environments.
-- ICE server: must support both STUN (Session Traversal Utilities for NAT) and TURN (relay)
-- Recommended ICE server: Coturn (open source) or commercial providers (Twilio, Xirsys)
-- TURN credentials: username/password — configured in Collaborate workspace settings
-- Ports: UDP 3478 (STUN), TCP/UDP 5349 (TURN over TLS), UDP 49152–65535 (media relay)
-- Mobile app: iOS and Android apps required for field technicians — download from App Store/Play Store
-### Maximo Visual Inspection Deployment
-Maximo Visual Inspection (MVI) enables training and deploying computer vision models for defect detection, object classification, and counting. Models are trained using images uploaded via the MVI web interface, then deployed to inference endpoints accessible by inspection workflows.
-- GPU support: NVIDIA GPU worker nodes significantly accelerate model training (optional but recommended)
-- GPU operator: NVIDIA GPU Operator must be installed on OCP for GPU node support
-- Training: upload labelled images → select model type (classification, detection, segmentation) → train
-- Model types: image classification, object detection (YOLO-based), action detection, segmentation
-- Inference API: REST API endpoint for external systems to submit images and receive predictions
-### Enabling Applications in Workspaces
-After deploying an application at the suite level (operator deployment), it must be explicitly activated within each workspace. Workspace activation creates the app-specific configuration, database connections, and user access for that workspace instance.
-- Suite Admin → Catalog: deploy operator (suite-level — once per cluster)
-- Suite Admin → Workspace → select workspace → Apps tab → Activate
-- Activation generates unique URL: {app}.{workspace-id}.{cluster-apps-domain}
-- Workspace configuration: per-app settings (DB connection string, LDAP groups, feature flags)
-- Multiple workspaces: same app can be activated in multiple workspaces (e.g., PROD and DEV)
-
-## Configuration
-MAS configuration covers TLS certificate management (cert-manager, Let's Encrypt, custom CA), user authentication (LDAP, SAML 2.0, SCIM 2.0, local accounts), SMTP, workload resource customisation, CORS policy, and storage configuration — all managed via Suite Administration or Kubernetes CRs.
-- cert-manager required — manages all TLS certificates automatically via CRs
-- LDAP sync: pulls users from Active Directory on configurable schedule
-- SAML 2.0 SSO: multiple identity providers per workspace supported in 9.0+
-- SCIM 2.0: real-time user provisioning from Azure AD or Okta
-- Workload customisation: CPU/memory limits, node affinity, tolerations per pod type
-- SMTP OAuth2: required for Microsoft 365 and Google Workspace from Feb 2026
-### TLS Certificate Management
-MAS uses cert-manager to manage TLS certificates for all application URLs. Certificates are defined as Kubernetes Certificate resources and auto-renewed before expiry. Three certificate sources are supported: Let's Encrypt (public internet), custom CA (enterprise), and self-signed (development only).
-- cert-manager: installs as operator — manages Certificate and CertificateRequest CRs
-- Let's Encrypt: use for internet-accessible clusters — requires port 80 open for HTTP-01 challenge
-- Custom CA: create ClusterIssuer CR with enterprise CA cert and key — oc apply -f ca-issuer.yaml
-- Certificate renewal: cert-manager renews 30 days before expiry — fully automatic
-- Manual certificates: inject as Kubernetes secrets — override cert-manager for specific apps
-### LDAP User Synchronisation
-LDAP synchronisation pulls user accounts and group memberships from Microsoft Active Directory or OpenLDAP into the MAS user registry. MAS 9.0+ supports multiple LDAP configurations simultaneously, enabling sync from multiple directories (e.g., different AD forests per region).
-- Configuration: Suite Admin → Users → LDAP → New Configuration → enter server, baseDN, bindDN
-- Base DN example: dc=company,dc=com — defines the LDAP search root
-- User filter example: (&(objectClass=person)(memberOf=CN=MAS-Users,OU=Groups,DC=company,DC=com))
-- Attribute mapping: uid → userID, mail → email, givenName → firstName, sn → lastName
-- Sync schedule: cron expression — default 0 * * * * (hourly) — configurable in CR
-### SAML 2.0 SSO Configuration
-SAML 2.0 Single Sign-On allows users to log in to MAS using their existing enterprise identity provider (Okta, Azure AD, ADFS, Ping). MAS acts as the SAML Service Provider (SP). In MAS 9.0+, multiple SAML providers can be configured per workspace for different user populations.
-- MAS SP metadata URL: https://admin.{workspace}.{cluster-domain}/idp/saml20/metadata
-- Required SAML attributes: NameID (email format recommended), firstName, lastName, email
-- Azure AD setup: Enterprise Application → MAS SP metadata URL → configure attribute claims
-- Okta setup: Create App Integration → SAML 2.0 → enter MAS ACS URL and Entity ID
-- Multiple IdP: Suite Admin → Identity → Add provider → repeat for each SAML source
-### SCIM 2.0 User Provisioning
-SCIM 2.0 (System for Cross-domain Identity Management) enables automated user and group provisioning from enterprise identity providers. Unlike LDAP pull-based sync, SCIM uses push-based provisioning — the IdP sends user changes to MAS in near-real-time.
-- SCIM endpoint: https://admin.{workspace}.{cluster-domain}/scim/v2
-- Authentication: Bearer token — generate in Suite Admin → API Keys → Create SCIM token
-- Azure AD: Enterprise Application → Provisioning → Automatic → enter SCIM URL + token
-- Okta: Applications → Provisioning → API Integration → enter SCIM URL + token
-- Supported operations: Create, Update, Deactivate user; Create, Update, Delete group
-### Workload Resource Customisation
-MAS allows fine-grained control over pod resource requests and limits, node affinity rules, and tolerations. This is essential for production environments to prevent resource contention and ensure critical pods run on appropriately sized nodes.
-- Pod templates: edit MASApplication CR → spec.components.{component}.pods.{pod-name}.resources
-- Supported pods: api, ui, internal-api, coreidp, coreapi — full list in IBM docs
-- Manage JVM heap: configure Manage CR → spec.settings.jvmArgs: -Xms2g -Xmx8g
-- Node affinity: use nodeSelector or affinity rules in pod template spec — target labelled nodes
-- Tolerations: allow MAS pods on tainted nodes — useful for dedicated DB or GPU node groups
-
-## Upgrading to MAS 9.1
-MAS supports three upgrade paths: channel subscription (automated rolling), static catalog pinning (controlled maintenance window), and manual. Upgrading from legacy Maximo Asset Management 7.x or TRIRIGA requires specific database migration steps.
-- Channel subscription: automated upgrade when new version published to channel
-- Static catalog: pin to specific version — upgrade manually on your schedule
-- Upgrade order: OCP → SLS → Prerequisites → CP4D → MAS Core → Applications
-- MAM 7.x → Manage: database schema migration — existing data preserved
-- TRIRIGA → MREF: AES encryption migration + user/file migration required
-- Watson Discovery must be manually removed before upgrading Assist from pre-9.0
-### Upgrade Methods Compared
-MAS provides three upgrade methods. Channel subscription is the recommended approach for most production environments. Static catalog pinning gives precise control over which version is installed. Manual upgrade is used for complex environments with heavy customisations.
-- Channel subscription: oc edit subscription -n mas-{id}-core → update channel to v9-1 → operator auto-upgrades
-- Static catalog: pin CatalogSource to specific image digest — upgrade by updating digest reference
-- Manual: download specific operator bundle, apply CRDs, update operator image manually
-- Upgrade time: 2–4 hours for full suite upgrade (varies by app count and database size)
-- Zero-downtime rolling: MAS Core upgrades without interruption — Manage has brief maintenance window
-### Upgrade Prerequisites and Order
-The upgrade sequence must be followed strictly. Upgrading components out of order can cause compatibility failures. Always take a full backup before starting any upgrade. IBM provides a compatibility matrix for each MAS version showing supported prerequisite versions.
-- Step 1: Backup all databases — MongoDB, Db2, CouchDB — before starting
-- Step 2: Upgrade OCP if required (check MAS 9.1 compatibility matrix for OCP version)
-- Step 3: Upgrade IBM SLS to version compatible with MAS 9.1
-- Step 4: Upgrade MongoDB (6.0 → 7.0 → 8.0 sequentially — cannot skip versions)
-- Step 5: Upgrade Kafka (Strimzi operator upgrade — auto-rolling broker upgrade)
-### Maximo Asset Management (MAM) 7.x to Maximo Manage Migration
-Migrating from legacy Maximo Asset Management 7.x to Maximo Manage on MAS is a full platform migration, not an in-place upgrade. The process involves running database migration scripts against the existing MAM schema to bring it to the Manage schema version, then deploying Manage pointing at the migrated database.
-- Step 1: Install MAS (Core + Manage operator) on new OCP cluster in parallel with existing MAM
-- Step 2: Create Db2 database and restore MAM 7.x database schema backup
-- Step 3: Run IBM-provided migration scripts — upgrades schema from 7.6.x to Manage format
-- Step 4: Run upgrade-db command inside Manage pod — migrates remaining schema elements
-- Step 5: Deploy and activate Manage — points to migrated database
-### TRIRIGA to Maximo Real Estate and Facilities
-IBM TRIRIGA customers migrating to Maximo Real Estate and Facilities (MREF) undergo an application platform migration. The TRIRIGA database, files, users, and licenses all require specific migration steps. The TRIRIGA data model is preserved — MREF is TRIRIGA running on MAS infrastructure.
-- Database migration: export TRIRIGA DB, run migration scripts to update schema for MREF
-- AES encryption: TRIRIGA used reversible AES encryption — must migrate to MAS encryption format
-- File migration: TRIRIGA document store migrated to MAS shared filesystem (RWX PVC)
-- User migration: TRIRIGA users mapped to MAS user registry — passwords reset required
-- License migration: TRIRIGA named-user licences converted to MAS AppPoints allocation
-### Application-Specific Upgrade Notes
-Certain applications require special handling during upgrade due to dependency changes between versions. These notes apply specifically to upgrading from MAS 8.x to MAS 9.x.
-- Maximo Assist: Watson Discovery removed as dependency in 9.0 — contact IBM Support to manually remove before upgrading
-- Maximo Monitor: Db2 Warehouse schema upgraded automatically — ensure 30% free space before upgrade
-- Maximo Predict: WML deployment spaces recreated during upgrade — existing model deployments may need republishing
-- Maximo Manage: brief outage expected during schema upgrade step — plan maintenance window
-- MVI: model inference containers upgraded — existing deployed models must be re-deployed post-upgrade
-
-## Administration & Monitoring
-MAS administration covers Grafana/Prometheus/OpenTelemetry observability, IBM Storage Fusion backup and restore, AppPoints license management, user session control, audit logging (SIEM integration), performance tuning, and API key management.
-- Grafana + Prometheus + OpenTelemetry: full MAS observability stack
-- IBM Storage Fusion: coordinated backup across MongoDB, Db2, CouchDB
-- AppPoints: real-time usage tracked per user — session timeout reclaims idle points
-- Audit log: all admin actions logged — forwardable to Splunk, QRadar, syslog
-- MongoDB metrics are key health indicators — monitor replication lag and connections
-- API keys: per-user bearer tokens for programmatic MAS API access
-### Grafana, Prometheus and OpenTelemetry
-The MAS observability stack consists of Prometheus (metrics), Grafana (dashboards), and OpenTelemetry (distributed tracing). IBM provides a pre-built MAS maintenance dashboard in Grafana showing key service indicators. This stack must be installed separately after MAS Core.
-- Prometheus: installed via Community Prometheus Operator or Red Hat Monitoring — scrapes all MAS pod metrics
-- Grafana Operator: install from OperatorHub → create GrafanaDataSource pointing at Prometheus
-- MAS Maintenance Dashboard: import JSON from IBM GitHub — mas-devops/grafana-dashboards
-- OpenTelemetry Operator: install manually — oc apply -f otel-operator.yaml
-- Key metrics to monitor: mas_api_request_duration_seconds, mas_db_pool_size, mas_session_count
-### Backup and Restore with IBM Storage Fusion
-IBM Storage Fusion provides application-consistent backup for the full MAS stack. It coordinates database backup snapshots to ensure consistency across MongoDB, Db2, and CouchDB. Backups can be stored on-premise or in object storage (S3, IBM COS).
-- IBM Storage Fusion operator: install from OperatorHub → create StorageFusionInstance CR
-- Backup policy: configure retention (daily 7, weekly 4, monthly 12 — example policy)
-- MongoDB backup: Fusion triggers fsync + lock → volume snapshot → unlock — point-in-time consistent
-- Db2 backup: online backup using Db2 HADR + volume snapshot — no shutdown required
-- CouchDB backup: volume snapshot — stateful set paused briefly during snapshot
-### AppPoints and License Management
-AppPoints usage is tracked in real-time by the Data Reporter Operator (DRO) and visible in Suite Administration. Admins can view live usage, generate compliance reports, configure session timeouts to reclaim idle points, and purchase additional AppPoints through IBM.
-- Live usage: Suite Admin → License → AppPoints — shows consumed vs purchased in real time
-- Usage report: export CSV — shows per-user, per-app consumption for chargeback or audit
-- Session timeout: Suite Admin → Settings → Session → Inactivity timeout (minutes) — releases points
-- Peak usage: DRO reports hourly high-water mark — IBM bills based on peak consumption
-- Overage notification: email alert configured when usage exceeds 90% of purchased pool
-### Performance Tuning
-IBM provides specific performance tuning guidance for production MAS environments. The most impactful areas are MongoDB indexing and connection pooling, HAProxy router configuration, and Maximo Manage JVM heap sizing. Regular tuning is recommended after any significant data growth.
-- MongoDB connections: monitor db.serverStatus().connections — currentActive should stay below 70% of max
-- MongoDB index: db.collection.getIndexes() — ensure workorder and asset queries use indexes
-- HAProxy router: tune ROUTER_MAX_CONNECTIONS and ROUTER_THREAD_COUNT env vars on router pods
-- Manage JVM heap: -Xmx should be 75% of pod memory limit — e.g., 6g for 8 GB pod
-- OCP Cluster Insights Advisor: enable in OCP console — provides automated performance recommendations
-### Audit Logging and Compliance
-MAS maintains comprehensive audit logs of all user actions, administrative changes, API calls, and authentication events. Audit logs can be forwarded to enterprise SIEM systems for compliance with SOX, GDPR, ISO 27001, and other frameworks.
-- Audit log location: OCP audit log aggregation — Elasticsearch (OpenShift Logging) or Loki stack
-- Events logged: login, logout, user create/delete, group change, app activation, config change, API call
-- Log format: JSON — timestamp, user ID, action, resource, namespace, source IP
-- Forward to Splunk: configure Fluentd or Vector forwarder → Splunk HEC endpoint
-- Forward to QRadar: configure syslog forwarder → QRadar syslog listener port 514/6514
-### API Keys and Programmatic Access
-MAS exposes REST APIs for all core functions — user management, asset management (via Manage), and suite administration. API access uses Bearer token authentication via API keys generated per user in Suite Administration.
-- Generate key: Suite Admin → Users → {user} → API Keys tab → Create Key
-- Authentication header: Authorization: Bearer {api-key-value}
-- MAS Admin REST API: https://admin.{workspace}.{cluster-domain}/api/v1/ — suite management
-- Manage REST API: https://manage.{workspace}.{cluster-domain}/maximo/oslc/os/ — EAM data
-- Manage API docs: /maximo/api/docs — Swagger UI with all available object structures
-`;
-
-var SYS_PROMPT = 'You are an expert assistant for IBM Maximo Application Suite (MAS) 9.1, embedded in the maxTeam documentation portal. '
-  + 'Answer questions accurately using the documentation provided. Be concise, clear, and technical. '
-  + 'Answer in the same language as the user (English or French). Use bullet points and structure when helpful.\n\n'
-  + 'DOCUMENTATION:\n' + MAS_DOC;
+var SYS_PROMPT = 'You are an expert assistant for IBM Maximo Application Suite (MAS) 9.1, '
+  + 'embedded in the maxTeam documentation portal. '
+  + 'Answer questions accurately. Be concise, clear, and technical. '
+  + 'Answer in the same language as the user (English or French). '
+  + 'Format answers with clear structure. Use your knowledge of IBM MAS 9.1.';
 
 function send() {
   if (window.location.protocol === 'file:') {
-    addRaw('bot', '<div style="background:rgba(192,120,0,0.08);border:1px solid rgba(192,120,0,0.3);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--amber);line-height:1.6;">'
-      + '<strong>&#9888; Fichier local détecté</strong><br>'
-      + 'Le chatbot nécessite un serveur web. Déployez sur GitHub Pages ou lancez :<br>'
-      + '<code style="font-size:11px;background:var(--surface2);padding:2px 6px;border-radius:3px;font-family:IBM Plex Mono,monospace;">npx serve .</code>'
-      + '</div>');
+    addRaw('bot', '<div style="background:rgba(192,120,0,0.08);border:1px solid rgba(192,120,0,0.3);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--amber);line-height:1.6;"><strong>&#9888; Local file</strong><br>Deploy to GitHub Pages to enable the AI chatbot.</div>');
     return;
   }
   var inp = document.getElementById('inp');
@@ -830,41 +344,26 @@ function send() {
   showThinking();
 
   chatHistory.push({ role: 'user', content: q });
-  var messages = [{ role: 'system', content: SYS_PROMPT }].concat(chatHistory.slice(-10));
+  var messages = [{ role: 'system', content: SYS_PROMPT }].concat(chatHistory.slice(-8));
 
   fetch(GROQ_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + GROQ_KEY
-    },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: messages,
-      temperature: 0.3,
-      max_tokens: 1024,
-      stream: false
-    })
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
+    body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: messages, temperature: 0.3, max_tokens: 512 })
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
     removeThinking();
     if (data.error) {
-      console.error('Groq error:', data.error);
       addRaw('bot', '<span style="color:var(--amber);">Error: ' + data.error.message + '</span>');
-      chatHistory.pop();
-      return;
+      chatHistory.pop(); return;
     }
-    var reply = data.choices && data.choices[0] && data.choices[0].message
-      ? data.choices[0].message.content
-      : 'No response received.';
+    var reply = data.choices && data.choices[0] ? data.choices[0].message.content : 'No response.';
     chatHistory.push({ role: 'assistant', content: reply });
     addRaw('bot', formatReply(reply));
   })
   .catch(function(err) {
-    removeThinking();
-    chatHistory.pop();
-    console.error('Groq fetch error:', err);
+    removeThinking(); chatHistory.pop();
     addRaw('bot', '<span style="color:var(--amber);">Connection error: ' + (err.message || err) + '</span>');
   });
 }
@@ -874,32 +373,27 @@ function formatReply(text) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/^#{1,3}\s+(.+)$/gm, '<div style="font-weight:600;color:var(--header);margin:8px 0 4px;">$1</div>')
-    .replace(/^[-•]\s+(.+)$/gm, '<li>$1</li>')
-    .replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
     .replace(/`([^`]+)`/g, '<code style="background:var(--surface2);padding:1px 5px;border-radius:3px;font-family:IBM Plex Mono,monospace;font-size:11px;">$1</code>')
-    .replace(/(<li>.*?<\/li>\n?)+/g, function(m){ return '<ul style="margin:6px 0 6px 4px;padding-left:14px;list-style:disc;">' + m + '</ul>'; })
+    .replace(/(<li>[\s\S]*?<\/li>)/g, function(m){ return '<ul style="margin:6px 0 6px 4px;padding-left:14px;list-style:disc;">' + m + '</ul>'; })
     .replace(/\n\n/g, '<br><br>')
     .replace(/\n/g, '<br>');
   return text;
 }
 
-function ask(q) {
-  document.getElementById('inp').value = q;
-  send();
-}
+function ask(q) { document.getElementById('inp').value = q; send(); }
 
 function askSection() {
-  if (curSec === null) {
-    addRaw('bot', '<span style="color:var(--muted);font-size:12px;">Please select a section first.</span>');
-    return;
-  }
+  if (curSec === null) { addRaw('bot', '<span style="color:var(--muted);font-size:12px;">Please select a section first.</span>'); return; }
   var sec = SECTIONS[curSec];
   var D = currentLang === 'fr' && sec.fr ? sec.fr : sec;
   var q = currentLang === 'fr'
-    ? 'Résume et explique la section "' + D.title + '" de la documentation IBM MAS 9.1.'
-    : 'Summarise and explain the section "' + D.title + '" from the IBM MAS 9.1 documentation.';
+    ? 'Resume la section "' + D.title + '" de la documentation IBM MAS 9.1.'
+    : 'Summarise the section "' + D.title + '" from IBM MAS 9.1 documentation.';
   ask(q);
 }
+
 
 // ── LANGUAGE DATA ─────────────────────────────────────────────
 var L = {
