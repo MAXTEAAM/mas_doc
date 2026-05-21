@@ -234,12 +234,7 @@ header{height:52px;display:flex;align-items:center;padding:0 20px;gap:12px;backg
   <div class="reader">
     <div class="rbar">
       <div class="rbc" id="rbc">Select a section</div>
-      <div class="rpages">
-        <button class="pbtn" id="pb" onclick="cpage(-1)" disabled>&#8592; Prev</button>
-        <span id="pi" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--dim);padding:0 4px;">-- / --</span>
-        <button class="pbtn" id="nb" onclick="cpage(1)" disabled>Next &#8594;</button>
-      </div>
-      <button class="abtn" id="abtn" onclick="askSection()">&#10022; Summarise this page</button>
+      <button class="abtn" id="abtn" onclick="askSection()" style="display:none;">&#10022; Summarise</button>
     </div>
     <div class="rc" id="rc"></div>
   </div>
@@ -443,9 +438,10 @@ function send(){
 }
 function askSection(){
   if(curSec===null){addRaw('bot','<span style="color:var(--muted);font-size:12px;">Please select a section first.</span>');return;}
-  var sec=SECTIONS[curSec], pages=getPages(sec), page=pages[curSub];
-  var heads=page.type==='combined'?page.first.map(function(s){return s.heading;}):(page.data||[]).map(function(s){return s.heading;});
-  ask(heads.length?'Tell me about '+heads.join(' and '):'Tell me about '+sec.title);
+  var sec=SECTIONS[curSec];
+  var D2=currentLang==='fr'&&sec.fr?sec.fr:sec;
+  var heads=(D2.subsections||[]).slice(0,3).map(function(s){return s.heading;});
+  ask(heads.length?'Tell me about '+heads.join(' and '):'Tell me about '+D2.title);
 }
 function hk(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}
 document.getElementById('inp').addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,80)+'px';});
@@ -487,67 +483,46 @@ function buildNav(){
   });
 }
 function getPages(sec){
-  var pages=[],subs=sec.subsections||[];
-  pages.push({type:'combined',data:sec,first:subs.slice(0,2)});
-  for(var i=2;i<subs.length;i+=2) pages.push({type:'subs',data:subs.slice(i,i+2)});
-  return pages;
+  return [{type:'full', data:sec}];
 }
 function loadSec(idx){
   curSec=idx;curSub=0;
   document.querySelectorAll('.ni').forEach(function(el){el.classList.remove('active');});
   var ni=document.getElementById('ni'+idx);
   if(ni){ni.classList.add('active');ni.scrollIntoView({block:'nearest'});}
+  var abtn=document.getElementById('abtn');
+  if(abtn) abtn.style.display='';
   renderPage();
 }
 function renderPage(){
-  var sec=SECTIONS[curSec], pages=getPages(sec), total=pages.length, page=pages[curSub];
+  var sec=SECTIONS[curSec];
   var lang=L[currentLang];
-  document.getElementById('rbc').innerHTML='<span>'+sec.icon+' '+(currentLang==='fr'&&sec.fr?sec.fr.title:sec.title)+'</span> — '+(curSub+1)+' / '+total;
-  document.getElementById('pi').textContent=(curSub+1)+' / '+total;
-  document.getElementById('pb').disabled=curSub===0;
-  document.getElementById('nb').disabled=curSub>=total-1;
+  document.getElementById('rbc').innerHTML='<span>'+sec.icon+' '+(currentLang==='fr'&&sec.fr?sec.fr.title:sec.title)+'</span>';
   var rc=document.getElementById('rc');
   var D=currentLang==='fr'&&sec.fr?sec.fr:sec;
-  if(page.type==='combined'){
-    var fig=(sec.figure&&FIGURES[sec.figure])?FIGURES[sec.figure]:'';
-    var facts=(D.keyFacts||[]).map(function(f){return'<span class="kf">'+f+'</span>';}).join('');
-    var first2=currentLang==='fr'&&sec.fr?(sec.fr.subsections||[]).slice(0,2):page.first;
-    var subsHtml=first2.map(function(s){
-      var b=(s.bullets&&s.bullets.length)?'<ul class="ss-ul">'+s.bullets.map(function(b){return'<li>'+b+'</li>';}).join('')+'</ul>':'';
-      return'<div class="ss"><div class="ss-h">'+s.heading+'</div><div class="ss-p">'+s.content+'</div>'+b+'</div><div class="divl"></div>';
-    }).join('');
-    rc.innerHTML='<div class="sec-title">'+sec.icon+' <span>'+D.title+'</span></div>'
-      +'<div class="sec-summary">'+D.summary+'</div>'
-      +'<div class="sec-meta">'+lang.metaLabel+'</div>'
-      +(facts?'<div class="kf-row">'+facts+'</div>':'')
-      +(fig?'<div class="fig-box"><div class="fig-lbl">'+lang.figLabel+'</div>'+fig+'</div>':'')
-      +subsHtml;
-  } else {
-    var allSubs=currentLang==='fr'&&sec.fr?(sec.fr.subsections||[]):(sec.subsections||[]);
-    var startSub=2+(curSub-1)*2;
-    var pageSubs=allSubs.slice(startSub,startSub+2);
-    rc.innerHTML=(pageSubs.length?pageSubs:page.data).map(function(s){
-      var b=(s.bullets&&s.bullets.length)?'<ul class="ss-ul">'+s.bullets.map(function(b){return'<li>'+b+'</li>';}).join('')+'</ul>':'';
-      return'<div class="ss"><div class="ss-h">'+s.heading+'</div><div class="ss-p">'+s.content+'</div>'+b+'</div><div class="divl"></div>';
-    }).join('');
-  }
+  var fig=(sec.figure&&FIGURES[sec.figure])?FIGURES[sec.figure]:'';
+  var facts=(D.keyFacts||[]).map(function(f){return'<span class="kf">'+f+'</span>';}).join('');
+  var allSubs=currentLang==='fr'&&sec.fr?(sec.fr.subsections||[]):(sec.subsections||[]);
+  var subsHtml=allSubs.map(function(s){
+    var b=(s.bullets&&s.bullets.length)?'<ul class="ss-ul">'+s.bullets.map(function(b){return'<li>'+b+'</li>';}).join('')+'</ul>':'';
+    return'<div class="ss"><div class="ss-h">'+s.heading+'</div><div class="ss-p">'+s.content+'</div>'+b+'</div><div class="divl"></div>';
+  }).join('');
+  rc.innerHTML='<div class="sec-title">'+sec.icon+' <span>'+D.title+'</span></div>'
+    +'<div class="sec-summary">'+D.summary+'</div>'
+    +'<div class="sec-meta">'+lang.metaLabel+'</div>'
+    +(facts?'<div class="kf-row">'+facts+'</div>':'')
+    +(fig?'<div class="fig-box"><div class="fig-lbl">'+lang.figLabel+'</div>'+fig+'</div>':'')
+    +subsHtml;
   rc.scrollTop=0;
-}
-function cpage(d){
-  if(curSec===null)return;
-  var max=getPages(SECTIONS[curSec]).length;
-  curSub=Math.max(0,Math.min(max-1,curSub+d));
-  renderPage();
 }
 
 // ── HOME ──────────────────────────────────────────────────────
 function showHome(){
   curSec=null;curSub=0;
   document.querySelectorAll('.ni').forEach(function(el){el.classList.remove('active');});
+  var abtn=document.getElementById('abtn');
+  if(abtn) abtn.style.display='none';
   document.getElementById('rbc').innerHTML=L[currentLang].selectSection;
-  document.getElementById('pi').textContent='-- / --';
-  document.getElementById('pb').disabled=true;
-  document.getElementById('nb').disabled=true;
   buildRoadmap();
 }
 function buildRoadmap(){
@@ -606,16 +581,17 @@ function toggleLang(){
 }
 function updateLang(){
   var lang=L[currentLang];
-  document.getElementById('navHead').textContent=lang.navHead;
-  document.getElementById('abtn').textContent=lang.summarise;
-  document.getElementById('hBtnSub').textContent=lang.hBtnSub;
-  document.getElementById('cfTitle').textContent=lang.cfTitle;
-  document.getElementById('cfOnline').textContent=lang.online;
-  document.getElementById('recoLabel').textContent=lang.recoLabel;
-  document.getElementById('wTitle').textContent=lang.wTitle;
-  document.getElementById('wOnline').textContent=lang.wOnline;
-  document.getElementById('wText').textContent=lang.wText;
-  document.getElementById('inp').placeholder=lang.placeholder;
+  function _set(id,prop,val){var el=document.getElementById(id);if(el)el[prop]=val;}
+  _set('navHead','textContent',lang.navHead);
+  _set('abtn','textContent',lang.summarise);
+  _set('hBtnSub','textContent',lang.hBtnSub);
+  _set('cfTitle','textContent',lang.cfTitle);
+  _set('cfOnline','textContent',lang.online);
+  _set('recoLabel','textContent',lang.recoLabel);
+  _set('wTitle','textContent',lang.wTitle);
+  _set('wOnline','textContent',lang.wOnline);
+  _set('wText','textContent',lang.wText);
+  _set('inp','placeholder',lang.placeholder);
   var hlb=document.getElementById('hlbText');
   if(hlb) hlb.textContent=lang.langBtn;
   var hbtn=document.getElementById('langBtn');
@@ -665,8 +641,8 @@ toggleChat = function(){
 // Update popup text on lang change
 function updatePopupLang(){
   var fr = currentLang === 'fr';
-  document.getElementById('popupName').textContent = fr ? 'Assistant maxTeam' : 'maxTeam Assistant';
-  document.getElementById('popupMsg').textContent  = fr
+  var pn=document.getElementById('popupName'); if(pn) pn.textContent = fr ? 'Assistant maxTeam' : 'maxTeam Assistant';
+  var pm=document.getElementById('popupMsg'); if(pm) pm.textContent = fr
     ? '\uD83D\uDC4B Besoin d\u2019aide avec IBM MAS 9.1\u00a0? Cliquez pour poser une question\u00a0!'
     : '\uD83D\uDC4B Need help navigating IBM MAS 9.1? Click me to ask anything!';
 }
