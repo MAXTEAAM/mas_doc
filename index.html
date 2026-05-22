@@ -378,6 +378,56 @@ var SYS_PROMPT = 'You are the maxTeam documentation portal assistant for IBM Max
   + '- Max 400 tokens\n'
   + '- Reply in the same language as the question (FR or EN)';
 
+// Conversational prompt — used for greetings, thanks, small talk.
+// Knowledge questions outside MAS are politely declined and redirected.
+var SYS_PROMPT_CHAT = 'You are the maxTeam assistant for IBM MAS 9.1 documentation. Be warm and conversational.\n\n'
+  + 'RULES:\n'
+  + '- For greetings, thanks, small talk → respond warmly in 1-2 short sentences and invite the user to ask about MAS 9.1.\n'
+  + '- For self-questions (who are you, what can you do) → briefly say you are the maxTeam assistant for IBM MAS 9.1, and what topics you can help with (architecture, installation, licensing, watsonx, apps).\n'
+  + '- For ANY other knowledge question outside MAS (general facts, jokes, other products, math, weather, etc.) → politely decline and redirect: say you are specialised in IBM MAS 9.1 and offer to help with that.\n'
+  + '- NEVER answer technical MAS questions in this mode — if the user asks about Maximo, watsonx, installation, configuration, etc., ask them to rephrase so the documentation can be searched.\n'
+  + '- Max 2 sentences. Reply in the user language (FR or EN).';
+
+// Keywords that flag a question as technical (must go through doc RAG).
+// Lowercase only — matched against lowercased question via indexOf.
+var TECH_KEYWORDS = [
+  'maximo','mas ','mas9','mas8','watson','watsonx','ibm','openshift','ocp','kubernetes','k8s',
+  'kafka','mongodb','mongo','db2','couchdb','iceberg','presto','milvus',
+  'predict','monitor','manage','assist','collaborate','mvi','visual inspection','health',
+  'apppoint','app point','app-point','licens','entitlement','sls',
+  'install','installation','installer','deploy','déploiement','deploiement','configure','configuration',
+  'upgrade','migration','upgrad','mise à niveau','mise a niveau',
+  'cp4d','cloudpak','cloud pak','cloud-pak','workspace','tenant',
+  'ldap','saml','scim','sso','smtp','oauth','tls','ssl','cert-manager','cert manager','certificat',
+  'ansible','cloudformation','arm template','helm','terraform',
+  'tririga','scheduler','optimizer','mrf','mref','optim',
+  'prometheus','grafana','fusion','elasticsearch','loki','splunk','qradar',
+  'cluster','pod','namespace','operator','crd','custom resource','rbac',
+  'gpu','nvidia','a100','h100','h200','l40s','llm','foundation model','granite','llama','mistral','wml',
+  'backup','restore','sauvegarde','audit','siem',
+  'iot','mqtt','sensor','capteur',
+  'aws','azure','amazon','msk','documentdb','efs','ec2','rosa','aro','iaas',
+  'edge','sno','single node','single-node',
+  'jms','activemq','mq ','jvm','heap',
+  'mam','asset management','tririga',
+  'app connect','data reporter','dro',
+  'oracle','rwo','rwx','storage class',
+  'air-gap','air gap','airgap','disconnected','déconnecté','deconnecte',
+  'workload','sizing','dimensionnement','prerequis','prérequis','prerequisite',
+  'ports','firewall','pare-feu','dns','load balancer',
+  'rest api','rest','endpoint','bearer token','clé api','cle api','api key',
+  'audit log','journalisation','journal',
+  'role','rôle','user','utilisateur','group','groupe','registry','registre'
+];
+
+function isTechnical(q) {
+  var qL = ' ' + q.toLowerCase() + ' ';
+  for (var i = 0; i < TECH_KEYWORDS.length; i++) {
+    if (qL.indexOf(TECH_KEYWORDS[i]) !== -1) return true;
+  }
+  return false;
+}
+
 function ask(q) { document.getElementById('inp').value = q; send(); }
 
 // Build the documentation context: extracts the most relevant passages from SECTIONS
@@ -450,32 +500,41 @@ function send() {
 
   var related = findRelated(q);
   var context = buildContext(q);
+  var technical = isTechnical(q) || (context !== null);
 
-  // No relevant doc passage → don't even call Groq
-  if (!context) {
-    removeThinking();
-    var msg = currentLang === 'fr'
-      ? 'Je n\'ai pas trouvé cette information dans la documentation IBM MAS 9.1 fournie. Essayez de reformuler ou parcourez les sections à gauche.'
-      : 'I could not find this information in the provided IBM MAS 9.1 documentation. Try rephrasing or browse the sections on the left.';
-    addRaw('bot', '<div class="no-result">' + msg + '</div>');
-    return;
+  var systemPrompt, userMsgForGroq;
+
+  if (technical) {
+    // ── TECHNICAL MODE ── strict RAG, doc-only
+    if (!context) {
+      // Tech keyword detected but no matching doc → refuse cleanly, don't even call Groq
+      removeThinking();
+      var msgNoDoc = currentLang === 'fr'
+        ? 'Je n\'ai pas trouvé cette information dans la documentation IBM MAS 9.1 fournie. Essayez de reformuler ou parcourez les sections à gauche.'
+        : 'I could not find this information in the provided IBM MAS 9.1 documentation. Try rephrasing or browse the sections on the left.';
+      addRaw('bot', '<div class="no-result">' + msgNoDoc + '</div>');
+      return;
+    }
+    systemPrompt = SYS_PROMPT;
+    userMsgForGroq = '=== IBM MAS 9.1 DOCUMENTATION CONTEXT (ONLY ALLOWED SOURCE) ===\n\n'
+      + context
+      + '=== END OF CONTEXT ===\n\n'
+      + 'User question: ' + q + '\n\n'
+      + 'Answer ONLY from the context above. If the answer is not in it, say so using the exact fallback sentence from the rules.';
+  } else {
+    // ── CONVERSATIONAL MODE ── friendly small-talk, off-topic redirect
+    systemPrompt = SYS_PROMPT_CHAT;
+    userMsgForGroq = q;
   }
-
-  // Augmented question (sent to Groq, NOT stored in history to keep it clean)
-  var augmented = '=== IBM MAS 9.1 DOCUMENTATION CONTEXT (ONLY ALLOWED SOURCE) ===\n\n'
-    + context
-    + '=== END OF CONTEXT ===\n\n'
-    + 'User question: ' + q + '\n\n'
-    + 'Answer ONLY from the context above. If the answer is not in it, say so clearly using the exact fallback sentence from the rules.';
 
   // History keeps the raw question (not the augmented version)
   chatHistory.push({ role: 'user', content: q });
 
-  // Build messages: system + prior turns (clean) + current augmented question
+  // Build messages: system + prior turns (clean) + current question (augmented if technical)
   var prior = chatHistory.slice(-6, -1);
-  var messages = [{ role: 'system', content: SYS_PROMPT }]
+  var messages = [{ role: 'system', content: systemPrompt }]
     .concat(prior)
-    .concat([{ role: 'user', content: augmented }]);
+    .concat([{ role: 'user', content: userMsgForGroq }]);
 
   fetch(GROQ_URL, {
     method: 'POST',
@@ -483,8 +542,8 @@ function send() {
     body: JSON.stringify({
       model: 'llama-3.3-70b-versatile',
       messages: messages,
-      temperature: 0.1,
-      max_tokens: 450,
+      temperature: technical ? 0.1 : 0.5,
+      max_tokens: technical ? 450 : 150,
       stream: false
     })
   })
@@ -505,7 +564,8 @@ function send() {
     var reply = data.choices && data.choices[0] ? data.choices[0].message.content : 'No response.';
     chatHistory.push({ role: 'assistant', content: reply });
     var html = formatReply(reply);
-    if (related.length) {
+    // Only show "read more" doc-link tags in technical mode
+    if (technical && related.length) {
       html += buildReadMore(related);
     }
     addRaw('bot', html);
